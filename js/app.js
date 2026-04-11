@@ -1,394 +1,740 @@
 /* ================================================================
-   BARBERÍA PRO — app.js (Migrado a Supabase)
-   Lógica principal del frontend de reservas
+   PLATAFORMA AGENDA — app.js (v2)
+   
+   Wizard de reserva con transiciones fluidas tipo "step reveal".
+   Compatible con supabase-client.js (snake_case).
+   
+   Estructura del wizard:
+     Paso 1: elegir servicio (visible al inicio)
+     Paso 2: elegir fecha     (se revela al elegir servicio)
+     Paso 3: elegir profesional + hora (se revela al elegir fecha)
+     Modal: confirmación de datos
+     Pantalla final: confirmación con código RES-XXXXX
    ================================================================ */
 
-const state = {
-  servicios:    [],
-  empleados:    [],
-  servicioSel:  null,
-  slotSel:      null,
-  fechaSel:     null,
-  disponibilidad: {}
-};
+// ── INYECTAR CSS DE TRANSICIONES (sin tocar styles.css del usuario) ──
+(function inyectarEstilos() {
+  const css = `
+    .paso { 
+      transition: opacity .4s ease, max-height .5s ease, transform .4s ease, border-color .3s; 
+      position: relative;
+    }
+    .paso--locked { 
+      opacity: .35; 
+      pointer-events: none; 
+      filter: grayscale(.4);
+    }
+    .paso--active { 
+      opacity: 1; 
+    }
+    .paso--active .paso-titulo { 
+      color: var(--gold, #C9A84C) !important;
+    }
+    .paso--done .paso-titulo::after { 
+      content: ' ✓';
+      color: #22C55E;
+      font-weight: 700;
+    }
+    .paso-titulo[data-paso]::before {
+      transition: background .3s, transform .3s, color .3s;
+    }
+    .paso--active .paso-titulo[data-paso]::before {
+      transform: scale(1.1);
+    }
+    
+    /* Servicios */
+    .srv-grid { 
+      display: grid; 
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); 
+      gap: 14px; 
+    }
+    .srv-card {
+      background: var(--card, #1A1A2E);
+      border: 1px solid var(--border, #2A2A40);
+      border-radius: 14px;
+      padding: 16px 18px;
+      cursor: pointer;
+      transition: all .25s ease;
+      position: relative;
+    }
+    .srv-card:hover {
+      transform: translateY(-3px);
+      border-color: var(--gold, #C9A84C);
+      box-shadow: 0 8px 24px rgba(201,168,76,.15);
+    }
+    .srv-card.selected {
+      border-color: var(--gold, #C9A84C);
+      background: linear-gradient(135deg, rgba(201,168,76,.12), rgba(201,168,76,.02));
+      box-shadow: 0 0 0 2px rgba(201,168,76,.4);
+    }
+    .srv-card .srv-cat {
+      font-size: 10px;
+      text-transform: uppercase;
+      color: var(--gold, #C9A84C);
+      letter-spacing: .5px;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .srv-card .srv-name {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 8px;
+      color: var(--text, #fff);
+    }
+    .srv-card .srv-meta {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--muted, #94A3B8);
+    }
+    .srv-card .srv-price {
+      color: var(--gold-lt, #E4C875);
+      font-weight: 700;
+      font-size: 14px;
+    }
+    
+    /* Filtro empleados */
+    .emp-chips { 
+      display: flex; 
+      flex-wrap: wrap; 
+      gap: 8px;
+    }
+    .emp-chip {
+      background: var(--card, #1A1A2E);
+      border: 1px solid var(--border, #2A2A40);
+      border-radius: 999px;
+      padding: 8px 16px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all .2s;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--text, #fff);
+    }
+    .emp-chip:hover { border-color: var(--gold, #C9A84C); }
+    .emp-chip.selected {
+      background: var(--gold, #C9A84C);
+      color: #000;
+      border-color: var(--gold, #C9A84C);
+      font-weight: 600;
+    }
+    .emp-chip .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+    }
+    
+    /* Slots */
+    .slots-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(82px, 1fr));
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .slot {
+      background: var(--card, #1A1A2E);
+      border: 1px solid var(--border, #2A2A40);
+      border-radius: 8px;
+      padding: 10px 0;
+      text-align: center;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all .2s;
+      color: var(--text, #fff);
+    }
+    .slot:hover:not(.disabled) {
+      border-color: var(--gold, #C9A84C);
+      transform: translateY(-2px);
+    }
+    .slot.disabled {
+      opacity: .25;
+      cursor: not-allowed;
+      text-decoration: line-through;
+    }
+    .slot.selected {
+      background: var(--gold, #C9A84C);
+      color: #000;
+      border-color: var(--gold, #C9A84C);
+    }
+    .emp-block {
+      margin-bottom: 22px;
+    }
+    .emp-block-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--muted, #94A3B8);
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    /* Resumen sidebar */
+    .resumen-fila {
+      display: flex;
+      justify-content: space-between;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border, #2A2A40);
+      font-size: 13px;
+    }
+    .resumen-fila:last-child { border-bottom: none; }
+    .resumen-fila span { color: var(--muted, #94A3B8); }
+    .resumen-fila strong { color: var(--text, #fff); text-align: right; }
+    .resumen-total {
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 2px solid var(--gold, #C9A84C);
+      display: flex;
+      justify-content: space-between;
+      font-size: 16px;
+    }
+    .resumen-total strong { color: var(--gold-lt, #E4C875); font-size: 18px; }
+    .resumen-cta {
+      width: 100%;
+      margin-top: 14px;
+      padding: 12px;
+      background: var(--gold, #C9A84C);
+      color: #000;
+      border: none;
+      border-radius: 10px;
+      font-weight: 700;
+      font-size: 14px;
+      cursor: pointer;
+      transition: all .2s;
+    }
+    .resumen-cta:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(201,168,76,.3); }
+    .resumen-cta:disabled { opacity: .4; cursor: not-allowed; transform: none; box-shadow: none; }
+    
+    /* Modal */
+    .modal-back {
+      transition: opacity .25s;
+    }
+    .modal-back.is-open {
+      display: flex !important;
+      opacity: 1;
+    }
+    .modal-back.is-open .modal {
+      animation: modalIn .35s cubic-bezier(.16,1,.3,1);
+    }
+    @keyframes modalIn {
+      from { transform: translateY(20px) scale(.96); opacity: 0; }
+      to   { transform: translateY(0) scale(1); opacity: 1; }
+    }
+    
+    /* Pantalla final */
+    .conf-screen { animation: fadeUp .5s ease; }
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    
+    /* Toast */
+    .toast-error.show {
+      opacity: 1 !important;
+      transform: translateX(-50%) translateY(0) !important;
+    }
+  `;
+  const style = document.createElement('style');
+  style.textContent = css;
+  document.head.appendChild(style);
+})();
 
-// ── INIT ──────────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', async () => {
-  // Verificar que API está disponible
-  if (typeof API === 'undefined') {
-    console.error('❌ API no disponible. Verifica supabase-config.js');
-    mostrarError('Error de configuración. Recarga la página.');
-    return;
-  }
-
-  aplicarLogo();
-  mostrarLoader(true, 'Cargando servicios…');
+// ════════════════════════════════════════════════════════════════
+// ESTADO DEL WIZARD
+// ════════════════════════════════════════════════════════════════
+const Wizard = {
+  servicios: [],
+  empleados: [],
+  servicioElegido: null,
+  fechaElegida: null,
+  empleadoElegido: null,
+  horaElegida: null,
+  disponibilidad: null,
   
-  try {
-    const [srv, emp] = await Promise.all([
-      API.getServicios(), 
-      API.getEmpleados()
-    ]);
-    state.servicios = Array.isArray(srv) ? srv : [];
-    state.empleados = Array.isArray(emp) ? emp : [];
-    renderServicios();
-    renderEmpleadosFiltro();
-    console.log('✅ Datos cargados:', state.servicios.length, 'servicios,', state.empleados.length, 'empleados');
-  } catch(e) {
-    console.error('Error cargando datos:', e);
-    mostrarError('Error al cargar datos. Recarga la página.');
-  } finally {
-    mostrarLoader(false);
-  }
+  async init() {
+    showLoader('Cargando...');
+    try {
+      this.servicios = await API.getServicios();
+      this.empleados = await API.getEmpleados();
+    } catch (e) {
+      hideLoader();
+      showError('Error al conectar con la base de datos: ' + e.message);
+      return;
+    }
+    hideLoader();
+    
+    console.log(`✅ Datos cargados: ${this.servicios.length} servicios, ${this.empleados.length} empleados`);
+    
+    if (!this.servicios.length) {
+      showError('No hay servicios cargados. Carga datos en Supabase.');
+      return;
+    }
+    
+    this.renderServicios();
+    
+    // Inicializar calendario
+    if (typeof Calendar !== 'undefined') {
+      Calendar.init('calendario', (fecha) => this.onFechaSelected(fecha));
+    }
+    
+    this.activarPaso(1);
+    this.actualizarResumen();
+  },
   
-  renderCalendario('calendario');
-  escucharEventos();
-});
-
-// ── LOGO ──────────────────────────────────────────────────────
-function aplicarLogo() {
-  if (typeof CONFIG === 'undefined' || !CONFIG.logoUrl) return;
-  
-  const navLogo = document.getElementById('nav-logo');
-  if (navLogo) {
-    navLogo.innerHTML = `<img src="${CONFIG.logoUrl}" alt="${CONFIG.nombre}"
-      style="height:38px;width:38px;border-radius:50%;object-fit:cover;border:2px solid var(--gold)">`;
-  }
-  
-  ['sidebar-logo','footer-logo'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.innerHTML = `<img src="${CONFIG.logoUrl}" alt="${CONFIG.nombre}"
-      style="height:52px;border-radius:10px;object-fit:contain">`;
-  });
-}
-
-// ── SERVICIOS ─────────────────────────────────────────────────
-function renderServicios() {
-  const cont = document.getElementById('servicios-grid');
-  if (!cont) return;
-
-  if (!state.servicios.length) {
-    cont.innerHTML = '<p style="color:var(--hint);padding:20px;text-align:center">Sin servicios disponibles</p>';
-    return;
-  }
-
-  // Agrupar por categoría
-  const cats = {};
-  state.servicios.forEach(s => {
-    if (!cats[s.categoria]) cats[s.categoria] = [];
-    cats[s.categoria].push(s);
-  });
-
-  let html = '';
-  Object.entries(cats).forEach(([cat, svs]) => {
-    html += `<div class="srv-categoria">
-      <h3 class="srv-cat-titulo">${cat}</h3>
-      <div class="srv-lista">`;
-
-    svs.forEach(s => {
-      const durStr = s.duracion >= 60
-        ? `${Math.floor(s.duracion/60)}h${s.duracion%60 ? ' '+s.duracion%60+'min':''}`
-        : `${s.duracion} min`;
-      const esSel  = state.servicioSel && state.servicioSel.id === s.id;
-      const sesTag = s.esSesion
-        ? `<span class="srv-sesion">📅 ${s.maxSesiones} sesiones</span>` : '';
-      const skTag  = s.requiereSkill
-        ? `<span class="srv-skill">${s.requiereSkill}</span>` : '';
-
-      html += `
-        <div class="srv-card ${esSel ? 'srv-card--sel' : ''}"
-             onclick="seleccionarServicio('${s.id}')">
-          <div class="srv-card-info">
-            <div class="srv-card-nombre">${s.nombre} ${sesTag} ${skTag}</div>
-            <div class="srv-card-detalles">
-              <span class="srv-duracion">⏱ ${durStr}</span>
-              <span class="srv-precio">$${s.precio.toLocaleString('es-CL')}</span>
+  // ─────────────────────────────────────────────────────────────
+  // PASO 1: SERVICIOS
+  // ─────────────────────────────────────────────────────────────
+  renderServicios() {
+    const cont = document.getElementById('servicios-grid');
+    if (!cont) return;
+    
+    // Agrupar por categoría
+    const porCat = {};
+    this.servicios.forEach(s => {
+      const cat = s.categoria || 'Otros';
+      (porCat[cat] = porCat[cat] || []).push(s);
+    });
+    
+    let html = '<div class="srv-grid">';
+    Object.keys(porCat).forEach(cat => {
+      porCat[cat].forEach(s => {
+        html += `
+          <div class="srv-card" data-id="${s.id}">
+            <div class="srv-cat">${cat}</div>
+            <div class="srv-name">${escape(s.nombre)}</div>
+            <div class="srv-meta">
+              <span>⏱ ${s.duracion} min</span>
+              <span class="srv-price">$${s.precio.toLocaleString('es-CL')}</span>
             </div>
           </div>
-          <div class="srv-card-check ${esSel ? 'activo' : ''}">✓</div>
-        </div>`;
+        `;
+      });
     });
-    html += '</div></div>';
-  });
-
-  cont.innerHTML = html;
-}
-
-function seleccionarServicio(servicioID) {
-  const srv = state.servicios.find(s => s.id === servicioID);
-  if (!srv) return;
-
-  state.servicioSel = srv;
-  state.slotSel     = null;
-
-  renderServicios();
-
-  if (state.fechaSel) cargarDisponibilidad();
-
-  actualizarResumen();
-
-  document.getElementById('paso-fecha')
-    ?.scrollIntoView({ behavior:'smooth', block:'start' });
-}
-
-// ── FILTRO EMPLEADOS ──────────────────────────────────────────
-function renderEmpleadosFiltro() {
-  const cont = document.getElementById('empleados-filtro');
-  if (!cont) return;
-
-  let html = `<button class="emp-filtro-btn emp-filtro-btn--all activo"
-    onclick="filtrarEmpleado(null,this)">Todos</button>`;
-  state.empleados.forEach(e => {
-    html += `<button class="emp-filtro-btn" style="border-color:${e.color}"
-      onclick="filtrarEmpleado('${e.id}',this)">${e.nombre}</button>`;
-  });
-  cont.innerHTML = html;
-}
-
-let filtroEmpActivo = null;
-
-function filtrarEmpleado(empID, btn) {
-  document.querySelectorAll('.emp-filtro-btn').forEach(b => b.classList.remove('activo'));
-  btn.classList.add('activo');
-  filtroEmpActivo = empID;
-  renderSlotsActuales();
-}
-
-// ── DISPONIBILIDAD ────────────────────────────────────────────
-async function cargarDisponibilidad() {
-  if (!state.servicioSel || !state.fechaSel) return;
-
-  mostrarLoader(true, 'Buscando horarios disponibles…');
-  try {
-    const data = await API.getDisponibilidad(state.fechaSel, state.servicioSel.id);
-    state.disponibilidad = (data && data.empleados) ? data.empleados : {};
-    renderSlotsActuales();
-  } catch(e) {
-    console.error('Error cargando disponibilidad:', e);
-    mostrarError('Error al cargar disponibilidad.');
-    state.disponibilidad = {};
-    renderSlotsActuales();
-  } finally {
-    mostrarLoader(false);
-  }
-}
-
-function renderSlotsActuales() {
-  let empleados = { ...state.disponibilidad };
-  if (filtroEmpActivo && empleados[filtroEmpActivo]) {
-    empleados = { [filtroEmpActivo]: empleados[filtroEmpActivo] };
-  } else if (filtroEmpActivo) {
-    empleados = {};
-  }
-  renderSlots('slots-container', empleados);
-}
-
-// ── EVENTOS ───────────────────────────────────────────────────
-function escucharEventos() {
-  document.addEventListener('fechaSeleccionada', e => {
-    state.fechaSel = e.detail.fecha;
-    state.slotSel  = null;
-
-    const el = document.getElementById('fecha-display');
-    if (el) el.textContent = _formatFecha(state.fechaSel);
-
-    actualizarResumen();
-    if (state.servicioSel) cargarDisponibilidad();
-    else mostrarError('Selecciona un servicio primero.');
-  });
-
-  document.addEventListener('slotSeleccionado', e => {
-    const { empleadoID, empleadoNombre, horaInicio, horaFin } = e.detail;
-    state.slotSel = { empleadoID, empleadoNombre, horaInicio, horaFin };
-    filtroEmpActivo = empleadoID;
-    actualizarResumen();
-    abrirModalReserva();
-  });
-}
-
-// ── RESUMEN LATERAL ───────────────────────────────────────────
-function actualizarResumen() {
-  const el = document.getElementById('resumen-seleccion');
-  if (!el) return;
-
-  if (!state.servicioSel && !state.fechaSel) {
-    el.innerHTML = '<p class="resumen-placeholder">Selecciona un servicio y fecha para continuar.</p>';
-    return;
-  }
-
-  let html = '<div class="resumen-items">';
-
-  if (state.servicioSel) {
-    html += `
-      <div class="resumen-item"><span>✂️ Servicio</span><strong>${state.servicioSel.nombre}</strong></div>
-      <div class="resumen-item"><span>⏱ Duración</span><strong>${state.servicioSel.duracion} min</strong></div>
-      <div class="resumen-item"><span>💰 Precio</span><strong>$${state.servicioSel.precio.toLocaleString('es-CL')}</strong></div>`;
-  }
-  if (state.fechaSel) {
-    html += `<div class="resumen-item"><span>📅 Fecha</span><strong>${_formatFecha(state.fechaSel)}</strong></div>`;
-  }
-  if (state.slotSel) {
-    html += `
-      <div class="resumen-item"><span>🕐 Hora</span><strong>${state.slotSel.horaInicio}</strong></div>
-      <div class="resumen-item"><span>💈 Barbero</span><strong>${state.slotSel.empleadoNombre}</strong></div>`;
-  }
-
-  html += '</div>';
-
-  if (state.servicioSel && state.fechaSel && state.slotSel) {
-    html += `<button class="btn-reservar" onclick="abrirModalReserva()">
-      Confirmar Reserva →
-    </button>`;
-  } else if (state.servicioSel && state.fechaSel && !state.slotSel) {
-    html += `<p style="font-size:12px;color:var(--hint);margin-top:12px;text-align:center">
-      👆 Elige un horario disponible arriba
-    </p>`;
-  }
-
-  el.innerHTML = html;
-}
-
-// ── MODAL ─────────────────────────────────────────────────────
-function abrirModalReserva() {
-  if (!state.servicioSel || !state.fechaSel || !state.slotSel) {
-    mostrarError('Selecciona servicio, fecha y hora primero.');
-    return;
-  }
-
-  document.getElementById('modal-srv').textContent     = state.servicioSel.nombre;
-  document.getElementById('modal-barbero').textContent = state.slotSel.empleadoNombre;
-  document.getElementById('modal-fecha').textContent   = _formatFecha(state.fechaSel);
-  document.getElementById('modal-hora').textContent    = `${state.slotSel.horaInicio} — ${state.slotSel.horaFin}`;
-  document.getElementById('modal-precio').textContent  = `$${state.servicioSel.precio.toLocaleString('es-CL')} CLP`;
-
-  const sesionGroup = document.getElementById('sesion-group');
-  if (state.servicioSel.esSesion && sesionGroup) {
-    sesionGroup.style.display = 'block';
-    const sel = document.getElementById('sesion-num');
-    sel.innerHTML = '';
-    for (let i = 1; i <= state.servicioSel.maxSesiones; i++) {
-      sel.innerHTML += `<option value="${i}">Sesión ${i} de ${state.servicioSel.maxSesiones}</option>`;
+    html += '</div>';
+    cont.innerHTML = html;
+    
+    // Click handlers
+    cont.querySelectorAll('.srv-card').forEach(card => {
+      card.addEventListener('click', () => {
+        const id = card.dataset.id;
+        this.onServicioSelected(id);
+      });
+    });
+  },
+  
+  onServicioSelected(id) {
+    this.servicioElegido = this.servicios.find(s => s.id === id);
+    if (!this.servicioElegido) return;
+    
+    document.querySelectorAll('.srv-card').forEach(c => {
+      c.classList.toggle('selected', c.dataset.id === id);
+    });
+    
+    // Si es sesión (tatuajes), mostrar selector
+    const sesionGroup = document.getElementById('sesion-group');
+    const sesionNum = document.getElementById('sesion-num');
+    if (this.servicioElegido.esSesion && sesionGroup) {
+      sesionGroup.style.display = 'block';
+      sesionNum.innerHTML = '';
+      for (let i = 1; i <= this.servicioElegido.maxSesiones; i++) {
+        sesionNum.innerHTML += `<option value="${i}">Sesión ${i} de ${this.servicioElegido.maxSesiones}</option>`;
+      }
+    } else if (sesionGroup) {
+      sesionGroup.style.display = 'none';
     }
-  } else if (sesionGroup) {
-    sesionGroup.style.display = 'none';
+    
+    this.marcarPasoCompleto(1);
+    this.activarPaso(2);
+    this.actualizarResumen();
+    this.refrescarSlots();
+    
+    // Scroll suave al paso 2
+    setTimeout(() => {
+      document.getElementById('paso-fecha')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 200);
+  },
+  
+  // ─────────────────────────────────────────────────────────────
+  // PASO 2: FECHA
+  // ─────────────────────────────────────────────────────────────
+  async onFechaSelected(fecha) {
+    this.fechaElegida = fecha;
+    
+    const display = document.getElementById('fecha-display');
+    if (display) {
+      const d = new Date(fecha + 'T12:00:00');
+      display.textContent = d.toLocaleDateString('es-CL', {
+        weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
+      });
+    }
+    
+    if (!this.servicioElegido) {
+      showError('Primero elige un servicio');
+      return;
+    }
+    
+    this.marcarPasoCompleto(2);
+    this.activarPaso(3);
+    this.actualizarResumen();
+    await this.refrescarSlots();
+    
+    setTimeout(() => {
+      document.getElementById('paso-hora')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 200);
+  },
+  
+  // ─────────────────────────────────────────────────────────────
+  // PASO 3: PROFESIONAL + HORA
+  // ─────────────────────────────────────────────────────────────
+  async refrescarSlots() {
+    if (!this.servicioElegido || !this.fechaElegida) return;
+    
+    const cont = document.getElementById('slots-container');
+    cont.innerHTML = '<p class="slots-vacio">⏳ Buscando disponibilidad...</p>';
+    
+    const res = await API.getDisponibilidad(this.fechaElegida, this.servicioElegido.id);
+    if (!res.ok) {
+      cont.innerHTML = `<p class="slots-vacio">❌ ${res.error}</p>`;
+      return;
+    }
+    
+    this.disponibilidad = res.empleados;
+    this.renderEmpleadosFiltro();
+    this.renderSlots();
+  },
+  
+  renderEmpleadosFiltro() {
+    const cont = document.getElementById('empleados-filtro');
+    if (!cont || !this.disponibilidad) return;
+    
+    const empleados = Object.values(this.disponibilidad).filter(e => e.hayDisponibilidad);
+    
+    if (!empleados.length) {
+      cont.innerHTML = '';
+      return;
+    }
+    
+    let html = '<div class="emp-chips">';
+    html += `<div class="emp-chip ${!this.empleadoElegido ? 'selected' : ''}" data-emp="">
+      <span>👥 Todos</span>
+    </div>`;
+    empleados.forEach(({ empleado }) => {
+      const sel = this.empleadoElegido === empleado.id ? 'selected' : '';
+      html += `
+        <div class="emp-chip ${sel}" data-emp="${empleado.id}">
+          <span class="dot" style="background:${empleado.color}"></span>
+          <span>${escape(empleado.nombre)}</span>
+        </div>
+      `;
+    });
+    html += '</div>';
+    cont.innerHTML = html;
+    
+    cont.querySelectorAll('.emp-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        this.empleadoElegido = chip.dataset.emp || null;
+        this.horaElegida = null;
+        this.renderEmpleadosFiltro();
+        this.renderSlots();
+        this.actualizarResumen();
+      });
+    });
+  },
+  
+  renderSlots() {
+    const cont = document.getElementById('slots-container');
+    if (!cont || !this.disponibilidad) return;
+    
+    const empleados = Object.values(this.disponibilidad);
+    const visibles = this.empleadoElegido
+      ? empleados.filter(e => e.empleado.id === this.empleadoElegido)
+      : empleados.filter(e => e.hayDisponibilidad);
+    
+    if (!visibles.length) {
+      cont.innerHTML = '<p class="slots-vacio">😔 No hay disponibilidad para esta fecha. Prueba con otra fecha.</p>';
+      return;
+    }
+    
+    let html = '';
+    visibles.forEach(({ empleado, slots, cerrado }) => {
+      if (cerrado) {
+        html += `
+          <div class="emp-block">
+            <div class="emp-block-title">
+              <span class="dot" style="width:10px;height:10px;border-radius:50%;background:${empleado.color}"></span>
+              ${escape(empleado.nombre)} — agenda cerrada
+            </div>
+          </div>
+        `;
+        return;
+      }
+      
+      const slotsDisp = slots.filter(s => s.disponible);
+      if (!slotsDisp.length) return;
+      
+      html += `
+        <div class="emp-block">
+          <div class="emp-block-title">
+            <span class="dot" style="width:10px;height:10px;border-radius:50%;background:${empleado.color}"></span>
+            ${escape(empleado.nombre)} — ${slotsDisp.length} horarios
+          </div>
+          <div class="slots-grid">
+            ${slots.map(s => {
+              const sel = (this.empleadoElegido === empleado.id && this.horaElegida === s.horaInicio) ? 'selected' : '';
+              return `
+                <div class="slot ${s.disponible ? '' : 'disabled'} ${sel}"
+                     data-emp="${empleado.id}" data-hora="${s.horaInicio}">
+                  ${s.horaInicio}
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      `;
+    });
+    
+    cont.innerHTML = html || '<p class="slots-vacio">😔 Sin horarios disponibles</p>';
+    
+    cont.querySelectorAll('.slot:not(.disabled)').forEach(slot => {
+      slot.addEventListener('click', () => {
+        this.empleadoElegido = slot.dataset.emp;
+        this.horaElegida = slot.dataset.hora;
+        this.renderEmpleadosFiltro();
+        this.renderSlots();
+        this.marcarPasoCompleto(3);
+        this.actualizarResumen();
+      });
+    });
+  },
+  
+  // ─────────────────────────────────────────────────────────────
+  // ACTIVAR / MARCAR PASOS
+  // ─────────────────────────────────────────────────────────────
+  activarPaso(num) {
+    [1, 2, 3].forEach(n => {
+      const el = document.getElementById(['paso-servicio', 'paso-fecha', 'paso-hora'][n - 1]);
+      if (!el) return;
+      el.classList.remove('paso--active', 'paso--locked');
+      if (n === num) el.classList.add('paso--active');
+      else if (n > num) el.classList.add('paso--locked');
+    });
+  },
+  
+  marcarPasoCompleto(num) {
+    const el = document.getElementById(['paso-servicio', 'paso-fecha', 'paso-hora'][num - 1]);
+    if (el) el.classList.add('paso--done');
+  },
+  
+  // ─────────────────────────────────────────────────────────────
+  // RESUMEN SIDEBAR
+  // ─────────────────────────────────────────────────────────────
+  actualizarResumen() {
+    const cont = document.getElementById('resumen-seleccion');
+    if (!cont) return;
+    
+    if (!this.servicioElegido) {
+      cont.innerHTML = '<p class="resumen-placeholder">Selecciona un servicio para continuar.</p>';
+      return;
+    }
+    
+    const empNombre = this.empleadoElegido && this.disponibilidad
+      ? this.disponibilidad[this.empleadoElegido]?.empleado.nombre
+      : null;
+    
+    const fechaFmt = this.fechaElegida
+      ? new Date(this.fechaElegida + 'T12:00:00').toLocaleDateString('es-CL', {
+          day: 'numeric', month: 'short'
+        })
+      : null;
+    
+    let html = `
+      <div class="resumen-fila"><span>Servicio</span><strong>${escape(this.servicioElegido.nombre)}</strong></div>
+      <div class="resumen-fila"><span>Duración</span><strong>${this.servicioElegido.duracion} min</strong></div>
+    `;
+    if (fechaFmt) html += `<div class="resumen-fila"><span>Fecha</span><strong>${fechaFmt}</strong></div>`;
+    if (empNombre) html += `<div class="resumen-fila"><span>${window.TENANT.t('profesionalCap')}</span><strong>${escape(empNombre)}</strong></div>`;
+    if (this.horaElegida) html += `<div class="resumen-fila"><span>Hora</span><strong>${this.horaElegida}</strong></div>`;
+    
+    html += `<div class="resumen-total"><span>Total</span><strong>$${this.servicioElegido.precio.toLocaleString('es-CL')}</strong></div>`;
+    
+    const completo = this.servicioElegido && this.fechaElegida && this.empleadoElegido && this.horaElegida;
+    html += `<button class="resumen-cta" ${completo ? '' : 'disabled'} onclick="abrirModalConfirmar()">
+      ${completo ? '✅ Confirmar reserva' : 'Completa los pasos'}
+    </button>`;
+    
+    cont.innerHTML = html;
   }
+};
 
+// ════════════════════════════════════════════════════════════════
+// MODAL DE CONFIRMACIÓN
+// ════════════════════════════════════════════════════════════════
+function abrirModalConfirmar() {
+  if (!Wizard.servicioElegido || !Wizard.empleadoElegido || !Wizard.horaElegida) return;
+  
+  const emp = Wizard.disponibilidad[Wizard.empleadoElegido].empleado;
+  const fecha = new Date(Wizard.fechaElegida + 'T12:00:00').toLocaleDateString('es-CL', {
+    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
+  });
+  
+  document.getElementById('modal-srv').textContent     = Wizard.servicioElegido.nombre;
+  document.getElementById('modal-barbero').textContent = emp.nombre;
+  document.getElementById('modal-fecha').textContent   = fecha;
+  document.getElementById('modal-hora').textContent    = Wizard.horaElegida;
+  document.getElementById('modal-precio').textContent  = '$' + Wizard.servicioElegido.precio.toLocaleString('es-CL');
+  
+  const modal = document.getElementById('modal-reserva');
+  modal.style.display = 'flex';
+  modal.classList.add('is-open');
+}
+
+function cerrarModal() {
+  const modal = document.getElementById('modal-reserva');
+  modal.classList.remove('is-open');
+  setTimeout(() => modal.style.display = 'none', 250);
+}
+
+async function confirmarReserva() {
+  const nombre = document.getElementById('inp-nombre').value.trim();
+  const email  = document.getElementById('inp-email').value.trim();
+  const tel    = document.getElementById('inp-tel').value.trim();
+  const notas  = document.getElementById('inp-notas').value.trim();
+  const sesionNumEl = document.getElementById('sesion-num');
+  const sesionNum = sesionNumEl ? parseInt(sesionNumEl.value) || 1 : 1;
+  
+  if (!nombre || nombre.length < 2) { showError('Nombre inválido'); return; }
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showError('Email inválido'); return; }
+  
+  showLoader('Creando reserva...');
+  
+  const res = await API.crearReserva({
+    nombre, email, telefono: tel, notas,
+    servicioID: Wizard.servicioElegido.id,
+    empleadoID: Wizard.empleadoElegido,
+    fecha:      Wizard.fechaElegida,
+    horaInicio: Wizard.horaElegida,
+    sesionNum
+  });
+  
+  hideLoader();
+  
+  if (!res.ok) {
+    showError(res.error || 'Error al crear la reserva');
+    return;
+  }
+  
+  cerrarModal();
+  mostrarConfirmacion(res.reserva, res.codigo);
+}
+
+// ════════════════════════════════════════════════════════════════
+// PANTALLA DE CONFIRMACIÓN FINAL
+// ════════════════════════════════════════════════════════════════
+function mostrarConfirmacion(reserva, codigo) {
+  document.getElementById('reservas-screen').style.display = 'none';
+  document.getElementById('confirmacion-screen').style.display = 'block';
+  
+  // ⚡ CRÍTICO: usar snake_case de Supabase
+  document.getElementById('conf-id').textContent      = codigo || reserva.codigo || reserva.id;
+  document.getElementById('conf-nombre').textContent  = reserva.nombre_cliente;
+  document.getElementById('conf-srv').textContent     = reserva.servicio_nombre;
+  document.getElementById('conf-barbero').textContent = reserva.empleado_nombre;
+  
+  const fecha = new Date(reserva.fecha + 'T12:00:00').toLocaleDateString('es-CL', {
+    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
+  });
+  document.getElementById('conf-fecha').textContent = fecha;
+  document.getElementById('conf-hora').textContent  = reserva.hora_inicio.slice(0, 5);
+  
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  
+  // Notificar via Apps Script (debug visible)
+  console.log('📨 Reserva creada — webhook AS dispatched. Si no llega email, revisa appsScriptUrl en tenant.config.js y abre la URL en una nueva pestaña.');
+}
+
+function nuevaReserva() {
+  document.getElementById('confirmacion-screen').style.display = 'none';
+  document.getElementById('reservas-screen').style.display = 'block';
+  
+  Wizard.servicioElegido = null;
+  Wizard.fechaElegida = null;
+  Wizard.empleadoElegido = null;
+  Wizard.horaElegida = null;
+  Wizard.disponibilidad = null;
+  
+  document.querySelectorAll('.srv-card').forEach(c => c.classList.remove('selected'));
+  document.querySelectorAll('.paso').forEach(p => p.classList.remove('paso--done'));
+  document.getElementById('slots-container').innerHTML = '<p class="slots-vacio">Selecciona un servicio y fecha para ver disponibilidad.</p>';
+  document.getElementById('empleados-filtro').innerHTML = '';
+  document.getElementById('fecha-display').textContent = '';
+  
+  // Reset form
   ['inp-nombre','inp-email','inp-tel','inp-notas'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
-
-  document.getElementById('modal-reserva').classList.add('open');
-}
-
-function cerrarModal() {
-  document.getElementById('modal-reserva').classList.remove('open');
-}
-
-document.addEventListener('DOMContentLoaded', () => {
-  document.getElementById('modal-reserva')?.addEventListener('click', function(e) {
-    if (e.target === this) cerrarModal();
-  });
-});
-
-// ── CONFIRMAR RESERVA ─────────────────────────────────────────
-async function confirmarReserva() {
-  const nombre = document.getElementById('inp-nombre')?.value.trim();
-  const email  = document.getElementById('inp-email')?.value.trim();
-  const tel    = document.getElementById('inp-tel')?.value.trim();
-  const notas  = document.getElementById('inp-notas')?.value.trim();
-  const sesion = document.getElementById('sesion-num')?.value || 1;
-
-  if (!nombre || nombre.length < 2) { mostrarError('Ingresa tu nombre completo.'); return; }
-  if (!email  || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { mostrarError('Email inválido.'); return; }
-
-  const payload = {
-    nombre, 
-    email,
-    telefono:   tel || '',
-    servicioID: state.servicioSel.id,
-    empleadoID: state.slotSel.empleadoID,
-    fecha:      state.fechaSel,
-    horaInicio: state.slotSel.horaInicio,
-    notas:      notas || '',
-    sesionNum:  parseInt(sesion)
-  };
-
-  mostrarLoader(true, 'Confirmando tu reserva…');
-  try {
-    const res = await API.crearReserva(payload);
-    mostrarLoader(false);
-
-    if (res.ok) {
-      cerrarModal();
-      mostrarConfirmacion(res.reservaID, res.reserva);
-      cargarDisponibilidad();
-    } else {
-      mostrarError(res.error || 'Error al crear la reserva. Intenta de nuevo.');
-    }
-  } catch(e) {
-    mostrarLoader(false);
-    console.error('Error creando reserva:', e);
-    mostrarError('Error de conexión. Intenta de nuevo.');
-  }
-}
-
-// ── CONFIRMACIÓN ──────────────────────────────────────────────
-function mostrarConfirmacion(reservaID, reserva) {
-  const reservasScreen = document.getElementById('reservas-screen');
-  const confScreen     = document.getElementById('confirmacion-screen');
-  if (!confScreen) return;
-
-  if (reservasScreen) reservasScreen.style.display = 'none';
-  confScreen.style.display = 'block';
-
-  document.getElementById('conf-id').textContent      = reservaID;
-  document.getElementById('conf-nombre').textContent  = reserva?.nombre || '';
-  document.getElementById('conf-srv').textContent     = reserva?.servicioNombre || '';
-  document.getElementById('conf-barbero').textContent = reserva?.empleadoNombre || '';
-  document.getElementById('conf-fecha').textContent   = _formatFecha(reserva?.fecha) || '';
-  document.getElementById('conf-hora').textContent    = reserva?.horaInicio || '';
-
+  
+  Wizard.activarPaso(1);
+  Wizard.actualizarResumen();
+  if (typeof Calendar !== 'undefined') Calendar.reset();
+  
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-function nuevaReserva() {
-  const reservasScreen = document.getElementById('reservas-screen');
-  const confScreen     = document.getElementById('confirmacion-screen');
-  if (reservasScreen) reservasScreen.style.display = 'block';
-  if (confScreen)     confScreen.style.display = 'none';
-
-  state.slotSel    = null;
-  state.fechaSel   = null;
-  state.servicioSel= null;
-  filtroEmpActivo  = null;
-  actualizarResumen();
-  renderServicios();
-  renderCalendario('calendario');
+// ════════════════════════════════════════════════════════════════
+// HELPERS UI
+// ════════════════════════════════════════════════════════════════
+function showLoader(msg) {
+  const l = document.getElementById('loader');
+  if (!l) return;
+  l.style.display = 'flex';
+  const t = document.getElementById('loader-txt');
+  if (t) t.textContent = msg || 'Cargando...';
+}
+function hideLoader() {
+  const l = document.getElementById('loader');
+  if (l) l.style.display = 'none';
+}
+function showError(msg) {
+  const t = document.getElementById('toast-error');
+  if (!t) { alert(msg); return; }
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 4000);
+}
+function escape(s) {
+  return String(s || '').replace(/[<>&"']/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
-// ── HELPERS ───────────────────────────────────────────────────
-function mostrarLoader(show, txt) {
-  const el = document.getElementById('loader');
-  if (!el) return;
-  el.style.display = show ? 'flex' : 'none';
-  const txtEl = document.getElementById('loader-txt');
-  if (txtEl && txt) txtEl.textContent = txt;
-}
+// ════════════════════════════════════════════════════════════════
+// DEBUG: testar Apps Script
+// ════════════════════════════════════════════════════════════════
+window.testAppsScript = function() {
+  const url = window.TENANT.appsScriptUrl;
+  if (!url || url.includes('REEMPLAZAR')) {
+    alert('❌ La URL del Apps Script en tenant.config.js NO está configurada.\n\nValor actual: ' + url);
+    return;
+  }
+  console.log('🔧 Abriendo Apps Script URL en nueva pestaña...');
+  console.log('Esperado: {"ok":true,"servicio":"Agenda WebApp",...}');
+  console.log('Si dice "Authorization required" → tu deploy del Web App NO es "Anyone"');
+  window.open(url, '_blank');
+};
 
-function mostrarError(msg) {
-  const el = document.getElementById('toast-error');
-  if (!el) return;
-  el.textContent = '❌ ' + msg;
-  el.classList.add('visible');
-  setTimeout(() => el.classList.remove('visible'), 4000);
-}
-
-function _formatFecha(str) {
-  if (!str) return '';
-  const dias  = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
-  const meses = ['enero','febrero','marzo','abril','mayo','junio',
-                 'julio','agosto','septiembre','octubre','noviembre','diciembre'];
-  const f = new Date(str + 'T12:00:00');
-  return `${dias[f.getDay()]} ${f.getDate()} de ${meses[f.getMonth()]} ${f.getFullYear()}`;
-}
+// ════════════════════════════════════════════════════════════════
+// INIT
+// ════════════════════════════════════════════════════════════════
+document.addEventListener('DOMContentLoaded', () => {
+  if (typeof API === 'undefined') {
+    showError('supabase-client.js no cargó. Verifica las rutas en index.html');
+    return;
+  }
+  Wizard.init();
+  
+  // Atajo: Esc cierra modal
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') cerrarModal();
+  });
+  
+  console.log('💡 Tip: ejecuta testAppsScript() en la consola para verificar tu Web App de Apps Script');
+});
