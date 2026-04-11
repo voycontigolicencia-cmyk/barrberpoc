@@ -1,8 +1,8 @@
 /* ================================================================
-   PLATAFORMA AGENDA — app.js (v2)
+   PLATAFORMA AGENDA — app.js (v3)
    
    Wizard de reserva con transiciones fluidas tipo "step reveal".
-   Compatible con supabase-client.js (snake_case).
+   Compatible con calendar.js v3 y supabase-client.js.
    
    Estructura del wizard:
      Paso 1: elegir servicio (visible al inicio)
@@ -123,52 +123,6 @@
       width: 8px; height: 8px; border-radius: 50%;
     }
     
-    /* Slots */
-    .slots-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(82px, 1fr));
-      gap: 8px;
-      margin-top: 12px;
-    }
-    .slot {
-      background: var(--card, #1A1A2E);
-      border: 1px solid var(--border, #2A2A40);
-      border-radius: 8px;
-      padding: 10px 0;
-      text-align: center;
-      font-size: 13px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all .2s;
-      color: var(--text, #fff);
-    }
-    .slot:hover:not(.disabled) {
-      border-color: var(--gold, #C9A84C);
-      transform: translateY(-2px);
-    }
-    .slot.disabled {
-      opacity: .25;
-      cursor: not-allowed;
-      text-decoration: line-through;
-    }
-    .slot.selected {
-      background: var(--gold, #C9A84C);
-      color: #000;
-      border-color: var(--gold, #C9A84C);
-    }
-    .emp-block {
-      margin-bottom: 22px;
-    }
-    .emp-block-title {
-      font-size: 13px;
-      font-weight: 600;
-      color: var(--muted, #94A3B8);
-      margin-bottom: 8px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    
     /* Resumen sidebar */
     .resumen-fila {
       display: flex;
@@ -272,10 +226,32 @@ const Wizard = {
     
     this.renderServicios();
     
-    // Inicializar calendario
+    // Inicializar calendario (versión v3)
     if (typeof Calendar !== 'undefined') {
-      Calendar.init('calendario', (fecha) => this.onFechaSelected(fecha));
+      Calendar.init('calendario', (fecha) => {
+        this.onFechaSelected(fecha);
+      });
+    } else {
+      console.error('Calendar no está definido. Verifica que calendar.js esté cargado antes que app.js');
     }
+    
+    // Escuchar eventos del calendar v3
+    document.addEventListener('fechaSeleccionada', (e) => {
+      this.onFechaSelected(e.detail.fecha);
+    });
+    
+    document.addEventListener('slotSeleccionado', (e) => {
+      const { empleadoID, empleadoNombre, horaInicio, horaFin } = e.detail;
+      this.empleadoElegido = empleadoID;
+      this.horaElegida = horaInicio;
+      this.marcarPasoCompleto(3);
+      this.actualizarResumen();
+      
+      // Scroll suave al resumen
+      setTimeout(() => {
+        document.querySelector('.resumen-cta')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 100);
+    });
     
     this.activarPaso(1);
     this.actualizarResumen();
@@ -300,7 +276,7 @@ const Wizard = {
       porCat[cat].forEach(s => {
         html += `
           <div class="srv-card" data-id="${s.id}">
-            <div class="srv-cat">${cat}</div>
+            <div class="srv-cat">${escape(cat)}</div>
             <div class="srv-name">${escape(s.nombre)}</div>
             <div class="srv-meta">
               <span>⏱ ${s.duracion} min</span>
@@ -336,7 +312,7 @@ const Wizard = {
     if (this.servicioElegido.esSesion && sesionGroup) {
       sesionGroup.style.display = 'block';
       sesionNum.innerHTML = '';
-      for (let i = 1; i <= this.servicioElegido.maxSesiones; i++) {
+      for (let i = 1; i <= (this.servicioElegido.maxSesiones || 1); i++) {
         sesionNum.innerHTML += `<option value="${i}">Sesión ${i} de ${this.servicioElegido.maxSesiones}</option>`;
       }
     } else if (sesionGroup) {
@@ -346,7 +322,22 @@ const Wizard = {
     this.marcarPasoCompleto(1);
     this.activarPaso(2);
     this.actualizarResumen();
-    this.refrescarSlots();
+    
+    // Resetear selecciones previas de fecha/hora
+    this.fechaElegida = null;
+    this.empleadoElegido = null;
+    this.horaElegida = null;
+    
+    // Resetear calendario visualmente
+    if (typeof Calendar !== 'undefined') {
+      Calendar.reset();
+    }
+    
+    // Limpiar slots container
+    const slotsContainer = document.getElementById('slots-container');
+    if (slotsContainer) {
+      slotsContainer.innerHTML = '<p class="slots-vacio">Selecciona una fecha para ver disponibilidad.</p>';
+    }
     
     // Scroll suave al paso 2
     setTimeout(() => {
@@ -376,7 +367,9 @@ const Wizard = {
     this.marcarPasoCompleto(2);
     this.activarPaso(3);
     this.actualizarResumen();
-    await this.refrescarSlots();
+    
+    // Cargar disponibilidad usando la función del calendar v3
+    await this.cargarDisponibilidadSlots();
     
     setTimeout(() => {
       document.getElementById('paso-hora')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -384,45 +377,52 @@ const Wizard = {
   },
   
   // ─────────────────────────────────────────────────────────────
-  // PASO 3: PROFESIONAL + HORA
+  // PASO 3: PROFESIONAL + HORA (usando calendar v3)
   // ─────────────────────────────────────────────────────────────
-  async refrescarSlots() {
+  async cargarDisponibilidadSlots() {
     if (!this.servicioElegido || !this.fechaElegida) return;
     
-    const cont = document.getElementById('slots-container');
-    cont.innerHTML = '<p class="slots-vacio">⏳ Buscando disponibilidad...</p>';
-    
-    const res = await API.getDisponibilidad(this.fechaElegida, this.servicioElegido.id);
-    if (!res.ok) {
-      cont.innerHTML = `<p class="slots-vacio">❌ ${res.error}</p>`;
-      return;
+    const slotsContainer = document.getElementById('slots-container');
+    if (slotsContainer) {
+      slotsContainer.innerHTML = '<p class="slots-vacio">⏳ Buscando disponibilidad...</p>';
     }
     
-    this.disponibilidad = res.empleados;
-    this.renderEmpleadosFiltro();
-    this.renderSlots();
+    // Usar la función global de calendar.js v3
+    if (typeof cargarDisponibilidad !== 'undefined') {
+      const result = await cargarDisponibilidad(this.fechaElegida, this.servicioElegido.id);
+      if (result && result.ok) {
+        this.disponibilidad = result.empleados;
+        // Renderizar filtro de profesionales
+        this.renderEmpleadosFiltro();
+      }
+    } else {
+      console.error('cargarDisponibilidad no está definida. calendar.js v3 está cargado?');
+      if (slotsContainer) {
+        slotsContainer.innerHTML = '<p class="slots-vacio">❌ Error: No se pudo cargar la disponibilidad</p>';
+      }
+    }
   },
   
   renderEmpleadosFiltro() {
     const cont = document.getElementById('empleados-filtro');
-    if (!cont || !this.disponibilidad) return;
+    if (!cont || !this.disponibilidad) {
+      if (cont) cont.innerHTML = '';
+      return;
+    }
     
     const empleados = Object.values(this.disponibilidad).filter(e => e.hayDisponibilidad);
     
     if (!empleados.length) {
-      cont.innerHTML = '';
+      cont.innerHTML = '<p class="slots-vacio">No hay profesionales con disponibilidad esta fecha</p>';
       return;
     }
     
     let html = '<div class="emp-chips">';
-    html += `<div class="emp-chip ${!this.empleadoElegido ? 'selected' : ''}" data-emp="">
-      <span>👥 Todos</span>
-    </div>`;
     empleados.forEach(({ empleado }) => {
       const sel = this.empleadoElegido === empleado.id ? 'selected' : '';
       html += `
         <div class="emp-chip ${sel}" data-emp="${empleado.id}">
-          <span class="dot" style="background:${empleado.color}"></span>
+          <span class="dot" style="background:${empleado.color || '#C9A84C'}"></span>
           <span>${escape(empleado.nombre)}</span>
         </div>
       `;
@@ -432,77 +432,20 @@ const Wizard = {
     
     cont.querySelectorAll('.emp-chip').forEach(chip => {
       chip.addEventListener('click', () => {
-        this.empleadoElegido = chip.dataset.emp || null;
+        const empId = chip.dataset.emp;
+        this.empleadoElegido = empId;
         this.horaElegida = null;
         this.renderEmpleadosFiltro();
-        this.renderSlots();
         this.actualizarResumen();
-      });
-    });
-  },
-  
-  renderSlots() {
-    const cont = document.getElementById('slots-container');
-    if (!cont || !this.disponibilidad) return;
-    
-    const empleados = Object.values(this.disponibilidad);
-    const visibles = this.empleadoElegido
-      ? empleados.filter(e => e.empleado.id === this.empleadoElegido)
-      : empleados.filter(e => e.hayDisponibilidad);
-    
-    if (!visibles.length) {
-      cont.innerHTML = '<p class="slots-vacio">😔 No hay disponibilidad para esta fecha. Prueba con otra fecha.</p>';
-      return;
-    }
-    
-    let html = '';
-    visibles.forEach(({ empleado, slots, cerrado }) => {
-      if (cerrado) {
-        html += `
-          <div class="emp-block">
-            <div class="emp-block-title">
-              <span class="dot" style="width:10px;height:10px;border-radius:50%;background:${empleado.color}"></span>
-              ${escape(empleado.nombre)} — agenda cerrada
-            </div>
-          </div>
-        `;
-        return;
-      }
-      
-      const slotsDisp = slots.filter(s => s.disponible);
-      if (!slotsDisp.length) return;
-      
-      html += `
-        <div class="emp-block">
-          <div class="emp-block-title">
-            <span class="dot" style="width:10px;height:10px;border-radius:50%;background:${empleado.color}"></span>
-            ${escape(empleado.nombre)} — ${slotsDisp.length} horarios
-          </div>
-          <div class="slots-grid">
-            ${slots.map(s => {
-              const sel = (this.empleadoElegido === empleado.id && this.horaElegida === s.horaInicio) ? 'selected' : '';
-              return `
-                <div class="slot ${s.disponible ? '' : 'disabled'} ${sel}"
-                     data-emp="${empleado.id}" data-hora="${s.horaInicio}">
-                  ${s.horaInicio}
-                </div>
-              `;
-            }).join('')}
-          </div>
-        </div>
-      `;
-    });
-    
-    cont.innerHTML = html || '<p class="slots-vacio">😔 Sin horarios disponibles</p>';
-    
-    cont.querySelectorAll('.slot:not(.disabled)').forEach(slot => {
-      slot.addEventListener('click', () => {
-        this.empleadoElegido = slot.dataset.emp;
-        this.horaElegida = slot.dataset.hora;
-        this.renderEmpleadosFiltro();
-        this.renderSlots();
-        this.marcarPasoCompleto(3);
-        this.actualizarResumen();
+        
+        // Filtrar slots en calendar v3
+        if (typeof window.CalendarState !== 'undefined') {
+          window.CalendarState.empleadoSeleccionado = empId;
+          // Forzar re-render de slots con el filtro
+          if (this.disponibilidad) {
+            renderSlots('slots-container', { empleados: this.disponibilidad, servicio: this.servicioElegido });
+          }
+        }
       });
     });
   },
@@ -537,8 +480,8 @@ const Wizard = {
       return;
     }
     
-    const empNombre = this.empleadoElegido && this.disponibilidad
-      ? this.disponibilidad[this.empleadoElegido]?.empleado.nombre
+    const empNombre = this.empleadoElegido && this.disponibilidad && this.disponibilidad[this.empleadoElegido]
+      ? this.disponibilidad[this.empleadoElegido].empleado.nombre
       : null;
     
     const fechaFmt = this.fechaElegida
@@ -547,12 +490,16 @@ const Wizard = {
         })
       : null;
     
+    const profLabel = (window.TENANT && window.TENANT.t) 
+      ? window.TENANT.t('profesionalCap') 
+      : 'Profesional';
+    
     let html = `
       <div class="resumen-fila"><span>Servicio</span><strong>${escape(this.servicioElegido.nombre)}</strong></div>
       <div class="resumen-fila"><span>Duración</span><strong>${this.servicioElegido.duracion} min</strong></div>
     `;
     if (fechaFmt) html += `<div class="resumen-fila"><span>Fecha</span><strong>${fechaFmt}</strong></div>`;
-    if (empNombre) html += `<div class="resumen-fila"><span>${window.TENANT.t('profesionalCap')}</span><strong>${escape(empNombre)}</strong></div>`;
+    if (empNombre) html += `<div class="resumen-fila"><span>${profLabel}</span><strong>${escape(empNombre)}</strong></div>`;
     if (this.horaElegida) html += `<div class="resumen-fila"><span>Hora</span><strong>${this.horaElegida}</strong></div>`;
     
     html += `<div class="resumen-total"><span>Total</span><strong>$${this.servicioElegido.precio.toLocaleString('es-CL')}</strong></div>`;
@@ -572,7 +519,10 @@ const Wizard = {
 function abrirModalConfirmar() {
   if (!Wizard.servicioElegido || !Wizard.empleadoElegido || !Wizard.horaElegida) return;
   
-  const emp = Wizard.disponibilidad[Wizard.empleadoElegido].empleado;
+  const emp = Wizard.disponibilidad && Wizard.disponibilidad[Wizard.empleadoElegido]
+    ? Wizard.disponibilidad[Wizard.empleadoElegido].empleado
+    : { nombre: 'Profesional' };
+  
   const fecha = new Date(Wizard.fechaElegida + 'T12:00:00').toLocaleDateString('es-CL', {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
   });
@@ -585,7 +535,7 @@ function abrirModalConfirmar() {
   
   const modal = document.getElementById('modal-reserva');
   modal.style.display = 'flex';
-  modal.classList.add('is-open');
+  setTimeout(() => modal.classList.add('is-open'), 10);
 }
 
 function cerrarModal() {
@@ -634,7 +584,6 @@ function mostrarConfirmacion(reserva, codigo) {
   document.getElementById('reservas-screen').style.display = 'none';
   document.getElementById('confirmacion-screen').style.display = 'block';
   
-  // ⚡ CRÍTICO: usar snake_case de Supabase
   document.getElementById('conf-id').textContent      = codigo || reserva.codigo || reserva.id;
   document.getElementById('conf-nombre').textContent  = reserva.nombre_cliente;
   document.getElementById('conf-srv').textContent     = reserva.servicio_nombre;
@@ -648,8 +597,7 @@ function mostrarConfirmacion(reserva, codigo) {
   
   window.scrollTo({ top: 0, behavior: 'smooth' });
   
-  // Notificar via Apps Script (debug visible)
-  console.log('📨 Reserva creada — webhook AS dispatched. Si no llega email, revisa appsScriptUrl en tenant.config.js y abre la URL en una nueva pestaña.');
+  console.log('📨 Reserva creada — webhook AS dispatched.');
 }
 
 function nuevaReserva() {
@@ -668,15 +616,17 @@ function nuevaReserva() {
   document.getElementById('empleados-filtro').innerHTML = '';
   document.getElementById('fecha-display').textContent = '';
   
-  // Reset form
-  ['inp-nombre','inp-email','inp-tel','inp-notas'].forEach(id => {
+  ['inp-nombre', 'inp-email', 'inp-tel', 'inp-notas'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
   
   Wizard.activarPaso(1);
   Wizard.actualizarResumen();
-  if (typeof Calendar !== 'undefined') Calendar.reset();
+  
+  if (typeof Calendar !== 'undefined') {
+    Calendar.reset();
+  }
   
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -707,17 +657,15 @@ function escape(s) {
 }
 
 // ════════════════════════════════════════════════════════════════
-// DEBUG: testar Apps Script
+// DEBUG
 // ════════════════════════════════════════════════════════════════
 window.testAppsScript = function() {
-  const url = window.TENANT.appsScriptUrl;
+  const url = window.TENANT?.appsScriptUrl;
   if (!url || url.includes('REEMPLAZAR')) {
-    alert('❌ La URL del Apps Script en tenant.config.js NO está configurada.\n\nValor actual: ' + url);
+    alert('❌ La URL del Apps Script en tenant.config.js NO está configurada.');
     return;
   }
-  console.log('🔧 Abriendo Apps Script URL en nueva pestaña...');
-  console.log('Esperado: {"ok":true,"servicio":"Agenda WebApp",...}');
-  console.log('Si dice "Authorization required" → tu deploy del Web App NO es "Anyone"');
+  console.log('🔧 Abriendo Apps Script URL:', url);
   window.open(url, '_blank');
 };
 
@@ -731,10 +679,9 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   Wizard.init();
   
-  // Atajo: Esc cierra modal
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') cerrarModal();
   });
   
-  console.log('💡 Tip: ejecuta testAppsScript() en la consola para verificar tu Web App de Apps Script');
+  console.log('💡 app.js v3 cargado. Calendar v3 integrado.');
 });
