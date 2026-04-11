@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#C9A84C">
+
+  <!-- SEO -->
+  <meta name="description" content="Reserva tu hora en Barbería Pro. Cortes, barba, tatuajes y más. Confirmación instantánea por email.">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://tu-dominio.com/">
+
+  <!-- Open Graph (WhatsApp, Facebook) -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://tu-dominio.com/">
+  <meta property="og:title" content="Barbería Pro — Reservas Online">
+  <meta property="og:description" content="Elige tu servicio, barbero y horario. Confirmación instantánea. Sin esperas.">
+  <meta property="og:image" content="https://tu-dominio.com/logo.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:locale" content="es_CL">
+  <meta property="og:site_name" content="Barbería Pro">
+
+  <!-- Twitter -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Barbería Pro — Reservas Online">
+  <meta name="twitter:description" content="Reserva en segundos. Cortes, barba, tatuajes y más.">
+  <meta name="twitter:image" content="https://tu-dominio.com/logo.png">
+
+  <!-- Favicon -->
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+
+  <!-- Schema.org -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "HairSalon",
+    "name": "Barbería Pro",
+    "url": "https://tu-dominio.com/",
+    "image": "https://tu-dominio.com/logo.png",
+    "telephone": "+56912345678",
+    "address": {
+      "@type": "PostalAddress",
+      "streetAddress": "Calle Ejemplo 123",
+      "addressLocality": "Santiago",
+      "addressRegion": "RM",
+      "addressCountry": "CL"
+    },
+    "openingHours": "Mo-Sa 09:00-20:00"
+  }
+  </script>
+
+  <title>Barbería Pro — Reservas Online</title>
+
+  <!-- Fuentes -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <!-- Leaflet (mapa) -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+
+  <!-- Estilos -->
+  <link rel="stylesheet" href="styles.css">
+
+  <!-- ══════════════════════════════════════════════════════════════
+       SUPABASE SDK
+       ═══════════════════════════════════════════════════════════════ -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+
+<!-- LOADER -->
+<div class="loader" id="loader">
+  <div class="loader-spin"></div>
+  <p class="loader-txt" id="loader-txt">Cargando…</p>
+</div>
+
+<!-- TOAST -->
+<div class="toast-error" id="toast-error"></div>
+
+<!-- NAVBAR -->
+<nav class="navbar">
+  <div class="nav-brand">
+    <span class="nav-logo" id="nav-logo">✂️</span>
+    <span class="nav-nombre">Barbería Pro</span>
+  </div>
+  <div class="nav-links">
+    <a class="nav-link" href="#servicios">Servicios</a>
+    <a class="nav-link" href="#reservar">Reservar</a>
+    <a class="nav-link" href="#ubicacion">Ubicación</a>
+    <a class="nav-link" href="#contacto">Contacto</a>
+    <a class="nav-link nav-link--admin" href="dashboard.html">Admin</a>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-chip">✂️ Reservas en tiempo real · Sin esperar</div>
+  <h1>Tu Barbería,<br>a un click</h1>
+  <p class="hero-sub">Elige tu servicio, barbero y horario. Confirmación instantánea por email.</p>
+  <div class="hero-ctas">
+    <button class="btn-primary" onclick="document.getElementById('reservar').scrollIntoView({behavior:'smooth'})">
+      Reservar Ahora →
+    </button>
+    <button class="btn-secondary" onclick="document.getElementById('servicios').scrollIntoView({behavior:'smooth'})">
+      Ver Servicios
+    </button>
+  </div>
+</section>
+
+<!-- PANTALLA PRINCIPAL DE RESERVAS -->
+<div id="reservas-screen">
+
+  <!-- SECCIÓN SERVICIOS -->
+  <section id="servicios" style="max-width:1280px;margin:0 auto;padding:48px 24px 0">
+    <h2 style="font-size:clamp(22px,4vw,32px);font-weight:800;margin-bottom:8px">
+      Nuestros <span style="color:var(--gold-lt)">Servicios</span>
+    </h2>
+    <p style="color:var(--muted);margin-bottom:0">Selecciona el servicio que deseas para ver disponibilidad.</p>
+  </section>
+
+  <!-- LAYOUT RESERVAS -->
+  <section id="reservar" class="reservas-layout">
+
+    <!-- COLUMNA PRINCIPAL -->
+    <div class="reservas-main">
+
+      <!-- PASO 1: SERVICIO -->
+      <div class="paso" id="paso-servicio">
+        <div class="paso-titulo" data-paso="1">Elige tu servicio</div>
+        <div id="servicios-grid">
+          <div style="padding:40px;text-align:center;color:var(--hint)">Cargando servicios…</div>
+        </div>
+      </div>
+
+      <!-- PASO 2: FECHA -->
+      <div class="paso" id="paso-fecha">
+        <div class="paso-titulo" data-paso="2">Selecciona la fecha</div>
+        <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--r-lg);padding:20px">
+          <div id="calendario"></div>
+          <div id="fecha-display" style="text-align:center;margin-top:12px;font-size:13px;color:var(--gold);font-weight:600;min-height:20px"></div>
+        </div>
+      </div>
+
+      <!-- PASO 3: BARBERO Y HORA -->
+      <div class="paso" id="paso-hora">
+        <div class="paso-titulo" data-paso="3">Elige barbero y hora</div>
+        <div id="empleados-filtro" style="margin-bottom:16px"></div>
+        <div id="slots-container">
+          <p class="slots-vacio">Selecciona un servicio y fecha para ver disponibilidad.</p>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- SIDEBAR -->
+    <div class="reservas-sidebar">
+      <div class="sidebar-card">
+        <div class="sidebar-titulo">Tu selección</div>
+        <div id="resumen-seleccion">
+          <p class="resumen-placeholder">Selecciona un servicio y fecha para continuar.</p>
+        </div>
+      </div>
+
+      <!-- Info del negocio -->
+      <div class="sidebar-card" id="contacto">
+        <div class="sidebar-titulo">Información</div>
+        <div style="font-size:13px;color:var(--muted);line-height:1.8" id="info-sidebar">
+          <!-- Inyectado por JS desde CONFIG -->
+        </div>
+      </div>
+    </div>
+
+  </section>
+</div>
+
+<!-- SECCIÓN UBICACIÓN -->
+<section id="ubicacion" style="max-width:1280px;margin:48px auto 0;padding:0 24px">
+  <h2 style="font-size:clamp(22px,4vw,32px);font-weight:800;margin-bottom:8px">
+    ¿Dónde <span style="color:var(--gold-lt)">Encontrarnos?</span>
+  </h2>
+  <p style="color:var(--muted);margin-bottom:20px">Estamos en el corazón de Santiago. Fácil acceso y estacionamiento cercano.</p>
+
+  <!-- Mapa Leaflet -->
+  <div id="mapa-leaflet" style="
+    height:360px;
+    border-radius:16px;
+    overflow:hidden;
+    border:1px solid var(--border);
+    box-shadow:0 4px 20px rgba(0,0,0,.15)
+  "></div>
+
+  <!-- Datos debajo del mapa -->
+  <div style="display:flex;flex-wrap:wrap;gap:16px;margin-top:20px">
+    <div style="flex:1;min-width:200px;background:var(--card);border:1px solid var(--border);
+      border-radius:12px;padding:16px;font-size:14px;color:var(--muted)">
+      📍 <strong id="ub-dir">—</strong>
+    </div>
+    <div style="flex:1;min-width:200px;background:var(--card);border:1px solid var(--border);
+      border-radius:12px;padding:16px;font-size:14px;color:var(--muted)">
+      ⏰ <strong id="ub-horario">—</strong>
+    </div>
+    <a id="ub-wsp" href="#" target="_blank" rel="noopener"
+      style="flex:1;min-width:200px;background:#25D366;border-radius:12px;padding:16px;
+      font-size:14px;color:#fff;font-weight:600;text-decoration:none;display:flex;
+      align-items:center;gap:8px">
+      💬 Escribir por WhatsApp
+    </a>
+    <a id="ub-ig" href="#" target="_blank" rel="noopener"
+      style="flex:1;min-width:200px;background:linear-gradient(135deg,#E1306C,#833AB4);
+      border-radius:12px;padding:16px;font-size:14px;color:#fff;font-weight:600;
+      text-decoration:none;display:flex;align-items:center;gap:8px">
+      📸 Ver Instagram
+    </a>
+  </div>
+</section>
+
+<!-- PANTALLA DE CONFIRMACIÓN -->
+<div id="confirmacion-screen" style="display:none">
+  <div class="conf-screen">
+    <div class="conf-icon">🎉</div>
+    <h2>¡Reserva Confirmada!</h2>
+    <p style="color:var(--muted);margin-bottom:8px">Tu número de reserva es:</p>
+    <div class="conf-id" id="conf-id">—</div>
+    <p style="color:var(--muted);font-size:14px;margin-bottom:20px">
+      Recibirás un email de confirmación en los próximos minutos.
+    </p>
+    <div class="conf-detalles">
+      <div class="conf-item"><span>Cliente</span><strong id="conf-nombre">—</strong></div>
+      <div class="conf-item"><span>Servicio</span><strong id="conf-srv">—</strong></div>
+      <div class="conf-item"><span>Barbero</span><strong id="conf-barbero">—</strong></div>
+      <div class="conf-item"><span>Fecha</span><strong id="conf-fecha">—</strong></div>
+      <div class="conf-item"><span>Hora</span><strong id="conf-hora">—</strong></div>
+    </div>
+    <button class="btn-primary" style="margin-top:20px" onclick="nuevaReserva()">
+      Hacer otra reserva
+    </button>
+  </div>
+</div>
+
+<!-- FOOTER -->
+<footer>
+  <div class="footer-nombre">✂️ <span id="footer-nombre">Barbería Pro</span></div>
+  <div class="footer-info" id="footer-info">
+    <!-- Inyectado por JS -->
+  </div>
+</footer>
+
+<!-- MODAL DE RESERVA -->
+<div class="modal-back" id="modal-reserva">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>✂️ Confirmar Reserva</h3>
+      <button class="modal-close" onclick="cerrarModal()">✕</button>
+    </div>
+    <div class="modal-body">
+
+      <!-- Resumen -->
+      <div class="modal-resumen">
+        <div class="modal-res-item"><span>Servicio</span><strong id="modal-srv">—</strong></div>
+        <div class="modal-res-item"><span>Barbero</span><strong id="modal-barbero">—</strong></div>
+        <div class="modal-res-item"><span>Fecha</span><strong id="modal-fecha">—</strong></div>
+        <div class="modal-res-item"><span>Hora</span><strong id="modal-hora">—</strong></div>
+        <div class="modal-res-item"><span>Precio</span><strong id="modal-precio" style="color:var(--gold-lt)">—</strong></div>
+      </div>
+
+      <!-- Sesión (solo tatuajes) -->
+      <div id="sesion-group" style="display:none" class="form-group">
+        <label class="form-label">N° de Sesión</label>
+        <select class="form-input form-select" id="sesion-num"></select>
+      </div>
+
+      <!-- Formulario cliente -->
+      <div class="form-2col">
+        <div class="form-group">
+          <label class="form-label">Nombre *</label>
+          <input class="form-input" id="inp-nombre" type="text" placeholder="Juan Pérez" autocomplete="name">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Teléfono</label>
+          <input class="form-input" id="inp-tel" type="tel" placeholder="+56 9 1234 5678" autocomplete="tel">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Email *</label>
+        <input class="form-input" id="inp-email" type="email" placeholder="tu@email.com" autocomplete="email">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Notas (opcional)</label>
+        <textarea class="form-input form-textarea" id="inp-notas" placeholder="Estilo de corte, referencia, etc."></textarea>
+      </div>
+
+      <button class="btn-confirmar" onclick="confirmarReserva()">
+        ✅ Confirmar Reserva
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════
+     SCRIPTS
+     ═══════════════════════════════════════════════════════════════ -->
+
+<!-- Leaflet JS -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+
+<!-- Supabase Config + API (IMPORTANTE: cargar primero) -->
+<script src="supabase-config.js"></script>
+
+<!-- Aplicación -->
+<script src="calendar.js"></script>
+<script src="app.js"></script>
+
+<script>
+/* ══════════════════════════════════════════════════════════════
+   Inyectar datos de contacto desde CONFIG
+   ═══════════════════════════════════════════════════════════════ */
+document.addEventListener('DOMContentLoaded', function () {
+  // Verificar que CONFIG está disponible
+  if (typeof CONFIG === 'undefined') {
+    console.error('CONFIG no está definido. Verifica supabase-config.js');
+    return;
+  }
+
+  /* Sidebar info */
+  var infoEl = document.getElementById('info-sidebar');
+  if (infoEl) {
+    infoEl.innerHTML =
+      '<p>📍 ' + CONFIG.direccion + '</p>' +
+      '<p>📞 <a href="tel:' + CONFIG.telefono + '" style="color:var(--gold)">' + CONFIG.telefono + '</a></p>' +
+      '<p>⏰ ' + CONFIG.horario + '</p>' +
+      '<p>📧 <a href="mailto:' + CONFIG.email + '" style="color:var(--gold)">' + CONFIG.email + '</a></p>' +
+      '<p>💬 <a href="' + CONFIG.whatsapp + '" target="_blank" rel="noopener" style="color:#25D366">WhatsApp</a>' +
+      ' &nbsp;|&nbsp; 📸 <a href="' + CONFIG.instagram + '" target="_blank" rel="noopener" style="color:#E1306C">Instagram</a></p>';
+  }
+
+  /* Footer */
+  var footerInfo = document.getElementById('footer-info');
+  var footerNombre = document.getElementById('footer-nombre');
+  if (footerInfo) {
+    footerInfo.innerHTML =
+      CONFIG.direccion + ' · ' + CONFIG.telefono + '<br>' +
+      CONFIG.horario + ' · ' + CONFIG.email;
+  }
+  if (footerNombre) footerNombre.textContent = CONFIG.nombre;
+
+  /* Sección ubicación */
+  var ubDir     = document.getElementById('ub-dir');
+  var ubHorario = document.getElementById('ub-horario');
+  var ubWsp     = document.getElementById('ub-wsp');
+  var ubIg      = document.getElementById('ub-ig');
+  if (ubDir)     ubDir.textContent     = CONFIG.direccion;
+  if (ubHorario) ubHorario.textContent = CONFIG.horario;
+  if (ubWsp)     ubWsp.href            = CONFIG.whatsapp;
+  if (ubIg)      ubIg.href             = CONFIG.instagram;
+
+  /* Logo personalizado */
+  if (CONFIG.logoUrl) {
+    var navLogo = document.getElementById('nav-logo');
+    if (navLogo) {
+      navLogo.innerHTML = '<img src="' + CONFIG.logoUrl + '" alt="' + CONFIG.nombre + '" ' +
+        'style="height:38px;width:38px;border-radius:50%;object-fit:cover;border:2px solid var(--gold)">';
+    }
+  }
+
+  /* ── Inicializar mapa Leaflet ── */
+  try {
+    var mapa = L.map('mapa-leaflet', { zoomControl: true }).setView(
+      [CONFIG.lat, CONFIG.lng], 16
+    );
+
+    /* Tiles OpenStreetMap */
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© <a href="https://openstreetmap.org">OpenStreetMap</a>',
+      maxZoom: 19
+    }).addTo(mapa);
+
+    /* Marcador personalizado con color dorado */
+    var iconoCustom = L.divIcon({
+      html: '<div style="background:#C9A84C;width:36px;height:36px;border-radius:50% 50% 50% 0;' +
+            'transform:rotate(-45deg);border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.4)">' +
+            '</div><span style="position:absolute;top:6px;left:8px;font-size:16px;transform:rotate(45deg)">✂️</span>',
+      className: '',
+      iconSize:   [36, 36],
+      iconAnchor: [18, 36],
+      popupAnchor:[0, -40]
+    });
+
+    L.marker([CONFIG.lat, CONFIG.lng], { icon: iconoCustom })
+      .addTo(mapa)
+      .bindPopup(
+        '<strong>' + CONFIG.nombre + '</strong><br>' +
+        CONFIG.direccion + '<br>' +
+        '<a href="' + CONFIG.whatsapp + '" target="_blank" style="color:#25D366">💬 WhatsApp</a>'
+      )
+      .openPopup();
+  } catch(e) {
+    console.warn('Mapa Leaflet no disponible:', e.message);
+    var mapaEl = document.getElementById('mapa-leaflet');
+    if (mapaEl) mapaEl.innerHTML =
+      '<div style="display:flex;align-items:center;justify-content:center;height:100%;' +
+      'color:var(--muted);font-size:14px">📍 ' + CONFIG.direccion + '</div>';
+  }
+});
+</script>
+</body>
+</html>

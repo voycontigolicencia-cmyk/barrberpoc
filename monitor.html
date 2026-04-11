@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monitor — Agenda</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E📺%3C/text%3E%3C/svg%3E">
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../tenant/tenant.config.js"></script>
+
+<style>
+  :root {
+    --bg: #0A0E1A;
+    --bg-card: #131829;
+    --bg-card-hover: #1A2138;
+    --text: #F1F5F9;
+    --text-dim: #94A3B8;
+    --border: #1E293B;
+    --green: #22C55E;
+    --amber: #F59E0B;
+    --red: #EF4444;
+    --blue: #3B82F6;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, system-ui, Segoe UI, Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+  
+  /* Header */
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px 32px;
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(180deg, var(--bg-card) 0%, var(--bg) 100%);
+  }
+  .brand { display: flex; align-items: center; gap: 14px; }
+  .brand img { height: 44px; border-radius: 8px; }
+  .brand h1 { font-size: 22px; font-weight: 700; }
+  .brand .sub { font-size: 13px; color: var(--text-dim); }
+  
+  .clock {
+    text-align: right;
+  }
+  .clock .time { font-size: 32px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .clock .date { font-size: 14px; color: var(--text-dim); text-transform: capitalize; }
+  
+  .live {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--green); color: white;
+    padding: 4px 10px; border-radius: 12px;
+    font-size: 11px; font-weight: 700; text-transform: uppercase;
+  }
+  .live::before {
+    content: ''; width: 8px; height: 8px; background: white; border-radius: 50%;
+    animation: blink 1.4s ease-in-out infinite;
+  }
+  @keyframes blink { 50% { opacity: 0.3; } }
+  
+  /* Stats grid */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 16px;
+    padding: 24px 32px;
+  }
+  .stat {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 18px 20px;
+    transition: transform 0.2s;
+  }
+  .stat:hover { transform: translateY(-2px); }
+  .stat .label { font-size: 12px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; }
+  .stat .value { font-size: 30px; font-weight: 700; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .stat.green .value { color: var(--green); }
+  .stat.amber .value { color: var(--amber); }
+  .stat.red .value { color: var(--red); }
+  .stat.blue .value { color: var(--blue); }
+  
+  /* Main content */
+  main {
+    display: grid;
+    grid-template-columns: 1.2fr 1fr;
+    gap: 24px;
+    padding: 0 32px 32px;
+  }
+  
+  .panel {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
+  }
+  .panel-head {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .panel-head h2 { font-size: 16px; font-weight: 600; }
+  .panel-head .count {
+    background: var(--bg);
+    padding: 4px 10px;
+    border-radius: 10px;
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+  .panel-body { padding: 12px 0; max-height: 65vh; overflow-y: auto; }
+  
+  /* Reserva row */
+  .reserva {
+    display: grid;
+    grid-template-columns: 60px 1fr auto;
+    gap: 14px;
+    align-items: center;
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.2s;
+    animation: slideIn 0.4s ease-out;
+  }
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateX(-12px); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+  .reserva:last-child { border-bottom: none; }
+  .reserva:hover { background: var(--bg-card-hover); }
+  .reserva .hora {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+  }
+  .reserva .info .nombre { font-size: 14px; font-weight: 600; }
+  .reserva .info .meta { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+  .reserva .estado {
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+  .estado.confirmada { background: rgba(34,197,94,0.15); color: var(--green); }
+  .estado.encurso { background: rgba(245,158,11,0.15); color: var(--amber); }
+  .estado.completada { background: rgba(59,130,246,0.15); color: var(--blue); }
+  .estado.cancelada { background: rgba(239,68,68,0.15); color: var(--red); }
+  
+  .reserva.activa {
+    background: rgba(245,158,11,0.08);
+    border-left: 3px solid var(--amber);
+  }
+  .reserva.proxima {
+    background: rgba(34,197,94,0.05);
+  }
+  
+  .empty {
+    padding: 40px 20px;
+    text-align: center;
+    color: var(--text-dim);
+  }
+  .empty .icon { font-size: 48px; margin-bottom: 8px; opacity: 0.4; }
+  
+  /* Próximas */
+  .proxima-card {
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .proxima-card .top {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 4px;
+  }
+  .proxima-card .fecha { font-size: 13px; font-weight: 600; }
+  .proxima-card .hora { font-size: 12px; color: var(--text-dim); }
+  .proxima-card .det { font-size: 12px; color: var(--text-dim); }
+  
+  /* Conexión */
+  .conn-status {
+    position: fixed;
+    bottom: 16px;
+    right: 16px;
+    padding: 8px 14px;
+    border-radius: 20px;
+    font-size: 12px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .conn-status .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--green);
+  }
+  .conn-status.offline .dot { background: var(--red); }
+  
+  /* Responsive */
+  @media (max-width: 1024px) {
+    .stats { grid-template-columns: repeat(2, 1fr); }
+    main { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <img id="logo" src="" alt="" onerror="this.style.display='none'">
+    <div>
+      <h1 id="brand-name"></h1>
+      <div class="sub">Monitor en vivo · <span class="live">EN VIVO</span></div>
+    </div>
+  </div>
+  <div class="clock">
+    <div class="time" id="clock"></div>
+    <div class="date" id="date"></div>
+  </div>
+</header>
+
+<div class="stats">
+  <div class="stat">
+    <div class="label">Hoy</div>
+    <div class="value" id="stat-total">—</div>
+  </div>
+  <div class="stat green">
+    <div class="label">Confirmadas</div>
+    <div class="value" id="stat-confirmadas">—</div>
+  </div>
+  <div class="stat amber">
+    <div class="label">En curso</div>
+    <div class="value" id="stat-encurso">—</div>
+  </div>
+  <div class="stat blue">
+    <div class="label">Completadas</div>
+    <div class="value" id="stat-completadas">—</div>
+  </div>
+  <div class="stat">
+    <div class="label">Ingreso del día</div>
+    <div class="value" id="stat-ingreso">$0</div>
+  </div>
+</div>
+
+<main>
+  <section class="panel">
+    <div class="panel-head">
+      <h2>📅 Reservas de hoy</h2>
+      <span class="count" id="count-hoy">0</span>
+    </div>
+    <div class="panel-body" id="lista-hoy">
+      <div class="empty"><div class="icon">⏰</div>Cargando...</div>
+    </div>
+  </section>
+  
+  <section class="panel">
+    <div class="panel-head">
+      <h2>📋 Próximas reservas</h2>
+      <span class="count" id="count-proximas">0</span>
+    </div>
+    <div class="panel-body" id="lista-proximas">
+      <div class="empty"><div class="icon">📆</div>Cargando...</div>
+    </div>
+  </section>
+</main>
+
+<div class="conn-status" id="conn"><span class="dot"></span><span id="conn-text">Conectado</span></div>
+
+<script src="js/supabase-client.js"></script>
+<script>
+// ────────────────────────────────────────────────────
+// Inicialización
+// ────────────────────────────────────────────────────
+document.getElementById('brand-name').textContent = window.TENANT.nombre;
+if (window.TENANT.logoUrl) document.getElementById('logo').src = window.TENANT.logoUrl;
+
+// ────────────────────────────────────────────────────
+// Reloj
+// ────────────────────────────────────────────────────
+function tickClock() {
+  const now = new Date();
+  document.getElementById('clock').textContent = now.toLocaleTimeString('es-CL', {
+    hour: '2-digit', minute: '2-digit'
+  });
+  document.getElementById('date').textContent = now.toLocaleDateString('es-CL', {
+    weekday: 'long', day: 'numeric', month: 'long'
+  });
+}
+tickClock();
+setInterval(tickClock, 1000);
+
+// ────────────────────────────────────────────────────
+// Carga inicial
+// ────────────────────────────────────────────────────
+async function cargarTodo() {
+  const dash = await API.getDashboard();
+  if (!dash.ok) {
+    setConn(false);
+    return;
+  }
+  setConn(true);
+  
+  // Stats
+  document.getElementById('stat-total').textContent       = dash.stats.totalHoy;
+  document.getElementById('stat-confirmadas').textContent = dash.stats.confirmadas;
+  document.getElementById('stat-encurso').textContent     = (dash.reservasHoy || []).filter(r => r.estado === 'En curso').length;
+  document.getElementById('stat-completadas').textContent = dash.stats.completadas;
+  document.getElementById('stat-ingreso').textContent     = '$' + dash.stats.ingresoEstimado.toLocaleString('es-CL');
+  
+  renderHoy(dash.reservasHoy || []);
+  renderProximas((dash.proximas || []).filter(p => p.fecha > dash.fecha));
+}
+
+function renderHoy(reservas) {
+  document.getElementById('count-hoy').textContent = reservas.length;
+  const cont = document.getElementById('lista-hoy');
+  
+  if (!reservas.length) {
+    cont.innerHTML = '<div class="empty"><div class="icon">☕</div>Sin reservas hoy</div>';
+    return;
+  }
+  
+  const ahora = new Date();
+  const ahoraMin = ahora.getHours() * 60 + ahora.getMinutes();
+  
+  cont.innerHTML = reservas.map(r => {
+    const ini = horaAMin(r.hora_inicio);
+    const fin = horaAMin(r.hora_fin);
+    const activa = ini <= ahoraMin && ahoraMin < fin && r.estado !== 'Cancelada' && r.estado !== 'Completada';
+    const proxima = ini > ahoraMin && ini - ahoraMin <= 30;
+    const cls = activa ? 'activa' : proxima ? 'proxima' : '';
+    const estadoCls = r.estado.toLowerCase().replace(/\s/g, '');
+    
+    return `
+      <div class="reserva ${cls}">
+        <div class="hora">${r.hora_inicio.slice(0,5)}</div>
+        <div class="info">
+          <div class="nombre">${escape(r.nombre_cliente)}</div>
+          <div class="meta">${escape(r.servicio_nombre)} · ${escape(r.empleado_nombre)}</div>
+        </div>
+        <div class="estado ${estadoCls}">${r.estado}</div>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderProximas(proximas) {
+  document.getElementById('count-proximas').textContent = proximas.length;
+  const cont = document.getElementById('lista-proximas');
+  
+  if (!proximas.length) {
+    cont.innerHTML = '<div class="empty"><div class="icon">📆</div>Sin reservas próximas</div>';
+    return;
+  }
+  
+  cont.innerHTML = proximas.slice(0, 12).map(r => `
+    <div class="proxima-card">
+      <div class="top">
+        <div class="fecha">${formatFecha(r.fecha)}</div>
+        <div class="hora">${r.hora_inicio.slice(0,5)}</div>
+      </div>
+      <div class="det">${escape(r.nombre_cliente)} · ${escape(r.servicio_nombre)} · ${escape(r.empleado_nombre)}</div>
+    </div>
+  `).join('');
+}
+
+function horaAMin(h) {
+  const [hh, mm] = h.split(':').map(Number);
+  return hh * 60 + mm;
+}
+
+function formatFecha(f) {
+  const d = new Date(f + 'T12:00:00');
+  return d.toLocaleDateString('es-CL', { weekday: 'short', day: 'numeric', month: 'short' });
+}
+
+function escape(s) {
+  return String(s || '').replace(/[<>&]/g, c => ({ '<':'&lt;','>':'&gt;','&':'&amp;' }[c]));
+}
+
+function setConn(ok) {
+  const el = document.getElementById('conn');
+  el.classList.toggle('offline', !ok);
+  document.getElementById('conn-text').textContent = ok ? 'Conectado' : 'Sin conexión';
+}
+
+// ────────────────────────────────────────────────────
+// Realtime: suscripción a cambios en reservas
+// ────────────────────────────────────────────────────
+const canal = db.channel('monitor-reservas')
+  .on('postgres_changes', { event: '*', schema: 'public', table: 'reservas' }, payload => {
+    console.log('🔔 Cambio:', payload.eventType, payload.new || payload.old);
+    cargarTodo();
+  })
+  .on('postgres_changes', { event: '*', schema: 'public', table: 'agendas_cerradas' }, () => cargarTodo())
+  .subscribe(status => {
+    console.log('Realtime:', status);
+    setConn(status === 'SUBSCRIBED');
+  });
+
+// ────────────────────────────────────────────────────
+// Refresh de seguridad cada 60s
+// ────────────────────────────────────────────────────
+cargarTodo();
+setInterval(cargarTodo, 60000);
+</script>
+</body>
+</html>

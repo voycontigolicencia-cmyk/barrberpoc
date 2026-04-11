@@ -1,0 +1,1237 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Admin — Agenda</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E⚙️%3C/text%3E%3C/svg%3E">
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../tenant/tenant.config.js"></script>
+
+<style>
+  :root {
+    --bg: #0A0E1A;
+    --bg-card: #131829;
+    --bg-hover: #1A2138;
+    --bg-input: #0F1424;
+    --text: #F1F5F9;
+    --text-dim: #94A3B8;
+    --text-mute: #64748B;
+    --border: #1E293B;
+    --border-strong: #334155;
+    --primary: var(--color-primario, #C9A84C);
+    --green: #22C55E;
+    --amber: #F59E0B;
+    --red: #EF4444;
+    --blue: #3B82F6;
+    --purple: #A855F7;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, system-ui, Segoe UI, Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    font-size: 14px;
+  }
+  button { font-family: inherit; cursor: pointer; }
+  input, select, textarea {
+    font-family: inherit;
+    background: var(--bg-input);
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    color: var(--text);
+    padding: 9px 12px;
+    font-size: 14px;
+    width: 100%;
+  }
+  input:focus, select:focus, textarea:focus {
+    outline: none;
+    border-color: var(--primary);
+  }
+  textarea { resize: vertical; min-height: 70px; }
+  label { display: block; font-size: 12px; color: var(--text-dim); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.4px; }
+  .field { margin-bottom: 14px; }
+  
+  /* ── Header ── */
+  header {
+    background: var(--bg-card);
+    border-bottom: 1px solid var(--border);
+    padding: 14px 28px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .brand img { height: 36px; border-radius: 6px; }
+  .brand h1 { font-size: 18px; font-weight: 600; }
+  .brand .badge {
+    background: var(--primary); color: #000;
+    padding: 2px 8px; border-radius: 6px;
+    font-size: 10px; font-weight: 700;
+    text-transform: uppercase; margin-left: 6px;
+  }
+  .header-actions { display: flex; gap: 10px; align-items: center; }
+  .header-actions a {
+    color: var(--text-dim); text-decoration: none;
+    font-size: 13px; padding: 6px 12px;
+    border-radius: 6px; border: 1px solid var(--border-strong);
+    transition: all 0.15s;
+  }
+  .header-actions a:hover { color: var(--text); background: var(--bg-hover); }
+  
+  /* ── Tabs ── */
+  nav.tabs {
+    display: flex;
+    gap: 4px;
+    padding: 0 28px;
+    background: var(--bg-card);
+    border-bottom: 1px solid var(--border);
+  }
+  .tab {
+    background: none; border: none; color: var(--text-dim);
+    padding: 14px 20px; font-size: 14px; font-weight: 500;
+    border-bottom: 2px solid transparent;
+    transition: all 0.15s;
+  }
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+  
+  /* ── Page ── */
+  main { padding: 24px 28px; max-width: 1600px; margin: 0 auto; }
+  .page { display: none; }
+  .page.active { display: block; }
+  
+  /* ── Stats grid ── */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 14px;
+    margin-bottom: 24px;
+  }
+  .stat {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 18px;
+  }
+  .stat .label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.4px; }
+  .stat .value { font-size: 24px; font-weight: 700; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .stat.green .value { color: var(--green); }
+  .stat.amber .value { color: var(--amber); }
+  .stat.red .value { color: var(--red); }
+  .stat.blue .value { color: var(--blue); }
+  
+  /* ── Toolbar ── */
+  .toolbar {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .toolbar > * { flex: 0 0 auto; }
+  .toolbar input[type="search"], .toolbar input[type="date"] { width: auto; min-width: 180px; }
+  .toolbar select { width: auto; min-width: 140px; }
+  .toolbar .grow { flex: 1; }
+  
+  /* ── Buttons ── */
+  .btn {
+    background: var(--bg-hover);
+    border: 1px solid var(--border-strong);
+    color: var(--text);
+    padding: 9px 16px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    transition: all 0.15s;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .btn:hover { background: var(--border-strong); }
+  .btn.primary { background: var(--primary); color: #000; border-color: var(--primary); }
+  .btn.primary:hover { opacity: 0.9; }
+  .btn.danger { background: var(--red); color: white; border-color: var(--red); }
+  .btn.success { background: var(--green); color: white; border-color: var(--green); }
+  .btn.sm { padding: 5px 10px; font-size: 12px; }
+  .btn.ghost { background: transparent; }
+  
+  /* ── Cards / list ── */
+  .panel {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .panel-head {
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .panel-head h2 { font-size: 15px; font-weight: 600; }
+  
+  /* ── Reserva row ── */
+  .reserva-row {
+    display: grid;
+    grid-template-columns: 90px 80px 1fr 1fr 130px auto;
+    gap: 12px;
+    align-items: center;
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.15s;
+  }
+  .reserva-row:last-child { border-bottom: none; }
+  .reserva-row:hover { background: var(--bg-hover); }
+  .reserva-row .codigo { font-size: 11px; color: var(--text-mute); font-family: monospace; }
+  .reserva-row .hora { font-weight: 700; font-variant-numeric: tabular-nums; }
+  .reserva-row .nombre { font-weight: 600; }
+  .reserva-row .meta { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+  .reserva-row .actions { display: flex; gap: 6px; }
+  
+  .estado-badge {
+    font-size: 10px;
+    padding: 4px 9px;
+    border-radius: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    text-align: center;
+    display: inline-block;
+  }
+  .estado-Confirmada { background: rgba(34,197,94,0.15); color: var(--green); }
+  .estado-Encurso, .estado-En.curso { background: rgba(245,158,11,0.15); color: var(--amber); }
+  .estado-Completada { background: rgba(59,130,246,0.15); color: var(--blue); }
+  .estado-Cancelada { background: rgba(239,68,68,0.15); color: var(--red); }
+  .estado-Pendiente { background: rgba(168,85,247,0.15); color: var(--purple); }
+  .estado-Nosepresentó { background: rgba(100,116,139,0.2); color: var(--text-dim); }
+  
+  /* ── Cliente card ── */
+  .cliente-card {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 12px;
+    align-items: center;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .cliente-card:hover { background: var(--bg-hover); }
+  .cliente-card .nombre { font-size: 15px; font-weight: 600; }
+  .cliente-card .meta { font-size: 12px; color: var(--text-dim); margin-top: 3px; }
+  .cliente-card .stats-mini { font-size: 12px; color: var(--text-dim); text-align: right; }
+  .cliente-card .stats-mini strong { color: var(--text); font-size: 14px; display: block; }
+  .etiqueta {
+    display: inline-block; padding: 2px 8px; border-radius: 6px;
+    background: var(--bg-input); font-size: 11px; margin-left: 6px;
+  }
+  
+  /* ── Empty state ── */
+  .empty {
+    padding: 60px 20px;
+    text-align: center;
+    color: var(--text-mute);
+  }
+  .empty .icon { font-size: 48px; margin-bottom: 12px; opacity: 0.4; }
+  
+  /* ── Modal ── */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    padding: 20px;
+    backdrop-filter: blur(4px);
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: var(--bg-card);
+    border: 1px solid var(--border-strong);
+    border-radius: 14px;
+    padding: 24px;
+    max-width: 520px;
+    width: 100%;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+  .modal.lg { max-width: 720px; }
+  .modal h2 { font-size: 18px; margin-bottom: 18px; }
+  .modal .actions {
+    display: flex; gap: 10px; justify-content: flex-end;
+    margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border);
+  }
+  
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  
+  .info-box {
+    background: var(--bg-input);
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 14px;
+    font-size: 13px;
+    color: var(--text-dim);
+  }
+  .info-box strong { color: var(--text); }
+  
+  /* ── Historial timeline ── */
+  .timeline { padding: 8px 0; }
+  .timeline-item {
+    padding: 10px 14px;
+    border-left: 2px solid var(--border-strong);
+    margin-left: 8px;
+    position: relative;
+  }
+  .timeline-item::before {
+    content: ''; position: absolute;
+    left: -5px; top: 14px;
+    width: 8px; height: 8px;
+    background: var(--primary); border-radius: 50%;
+  }
+  .timeline-item .when { font-size: 11px; color: var(--text-mute); }
+  .timeline-item .what { font-size: 13px; margin-top: 2px; }
+  .timeline-item .who { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+  
+  /* ── Toast ── */
+  .toast {
+    position: fixed;
+    bottom: 20px; left: 50%;
+    transform: translateX(-50%) translateY(60px);
+    background: var(--bg-card);
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    padding: 12px 18px;
+    font-size: 13px;
+    opacity: 0;
+    transition: all 0.3s;
+    z-index: 200;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .toast.success { border-color: var(--green); }
+  .toast.error { border-color: var(--red); }
+  
+  /* ── Login screen ── */
+  .login-screen {
+    position: fixed; inset: 0;
+    background: var(--bg);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 1000;
+  }
+  .login-box {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 32px;
+    max-width: 380px;
+    width: 100%;
+  }
+  .login-box h1 { font-size: 22px; margin-bottom: 8px; }
+  .login-box p { color: var(--text-dim); font-size: 13px; margin-bottom: 20px; }
+  
+  @media (max-width: 1024px) {
+    .stats { grid-template-columns: repeat(2, 1fr); }
+    .reserva-row { grid-template-columns: 1fr; gap: 6px; }
+    .reserva-row .actions { justify-content: flex-start; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ─────────── LOGIN SCREEN ─────────── -->
+<div class="login-screen" id="login">
+  <div class="login-box">
+    <h1>🔒 Acceso Admin</h1>
+    <p id="login-tenant"></p>
+    <div class="field">
+      <label>Token de admin</label>
+      <input type="password" id="login-token" placeholder="Ingresa el token...">
+    </div>
+    <button class="btn primary" style="width:100%" onclick="doLogin()">Acceder</button>
+  </div>
+</div>
+
+<!-- ─────────── HEADER ─────────── -->
+<header style="display:none" id="app-header">
+  <div class="brand">
+    <img id="logo" src="" alt="" onerror="this.style.display='none'">
+    <h1 id="brand-name"></h1>
+    <span class="badge">ADMIN</span>
+  </div>
+  <div class="header-actions">
+    <a href="monitor.html" target="_blank">📺 Monitor</a>
+    <a href="#" onclick="doLogout(); return false">Salir</a>
+  </div>
+</header>
+
+<nav class="tabs" id="app-tabs" style="display:none">
+  <button class="tab active" data-tab="reservas">📅 Reservas</button>
+  <button class="tab" data-tab="clientes">👥 Clientes</button>
+  <button class="tab" data-tab="agendas">🚫 Agendas cerradas</button>
+  <button class="tab" data-tab="reportes">📊 Reportes</button>
+</nav>
+
+<main id="app-main" style="display:none">
+
+<!-- ═════════════════ TAB: RESERVAS ═════════════════ -->
+<section class="page active" id="page-reservas">
+  
+  <div class="stats" id="stats-reservas">
+    <div class="stat"><div class="label">Total</div><div class="value" id="s-total">—</div></div>
+    <div class="stat green"><div class="label">Confirmadas</div><div class="value" id="s-conf">—</div></div>
+    <div class="stat amber"><div class="label">En curso</div><div class="value" id="s-curso">—</div></div>
+    <div class="stat blue"><div class="label">Completadas</div><div class="value" id="s-comp">—</div></div>
+    <div class="stat"><div class="label">Ingreso</div><div class="value" id="s-ing">$0</div></div>
+  </div>
+  
+  <div class="toolbar">
+    <input type="date" id="filter-fecha">
+    <select id="filter-empleado">
+      <option value="">Todos los profesionales</option>
+    </select>
+    <select id="filter-estado">
+      <option value="">Todos los estados</option>
+    </select>
+    <input type="search" id="filter-search" placeholder="🔍 Buscar cliente...">
+    <div class="grow"></div>
+    <button class="btn" onclick="cargarReservas()">↻ Actualizar</button>
+  </div>
+  
+  <div class="panel">
+    <div class="panel-head">
+      <h2 id="reservas-title">Reservas del día</h2>
+      <span class="estado-badge" id="reservas-count">0</span>
+    </div>
+    <div id="lista-reservas">
+      <div class="empty"><div class="icon">⏰</div>Cargando...</div>
+    </div>
+  </div>
+</section>
+
+<!-- ═════════════════ TAB: CLIENTES ═════════════════ -->
+<section class="page" id="page-clientes">
+  <div class="toolbar">
+    <input type="search" id="cli-search" placeholder="🔍 Buscar por nombre, email o teléfono..." class="grow">
+    <button class="btn" onclick="cargarClientes()">↻ Actualizar</button>
+  </div>
+  
+  <div class="panel">
+    <div class="panel-head">
+      <h2>Base de clientes</h2>
+      <span class="estado-badge" id="cli-count">0</span>
+    </div>
+    <div id="lista-clientes">
+      <div class="empty"><div class="icon">👥</div>Cargando...</div>
+    </div>
+  </div>
+</section>
+
+<!-- ═════════════════ TAB: AGENDAS CERRADAS ═════════════════ -->
+<section class="page" id="page-agendas">
+  <div class="toolbar">
+    <button class="btn primary" onclick="abrirModalCerrar()">+ Cerrar agenda</button>
+    <div class="grow"></div>
+    <button class="btn" onclick="cargarCerradas()">↻ Actualizar</button>
+  </div>
+  
+  <div class="panel">
+    <div class="panel-head">
+      <h2>Bloqueos manuales</h2>
+      <span class="estado-badge" id="cer-count">0</span>
+    </div>
+    <div id="lista-cerradas">
+      <div class="empty"><div class="icon">🚫</div>Cargando...</div>
+    </div>
+  </div>
+</section>
+
+<!-- ═════════════════ TAB: REPORTES ═════════════════ -->
+<section class="page" id="page-reportes">
+  <div class="toolbar">
+    <input type="date" id="rep-desde">
+    <span style="color:var(--text-dim);align-self:center">a</span>
+    <input type="date" id="rep-hasta">
+    <button class="btn primary" onclick="cargarReporte()">Generar</button>
+  </div>
+  
+  <div class="stats">
+    <div class="stat"><div class="label">Reservas</div><div class="value" id="r-total">—</div></div>
+    <div class="stat green"><div class="label">Completadas</div><div class="value" id="r-comp">—</div></div>
+    <div class="stat red"><div class="label">Canceladas</div><div class="value" id="r-canc">—</div></div>
+    <div class="stat"><div class="label">No-show</div><div class="value" id="r-ns">—</div></div>
+    <div class="stat amber"><div class="label">Ingreso real</div><div class="value" id="r-ing">$0</div></div>
+  </div>
+  
+  <div class="panel">
+    <div class="panel-head"><h2>Top servicios</h2></div>
+    <div id="r-servicios"><div class="empty">Selecciona un período y genera el reporte</div></div>
+  </div>
+  <br>
+  <div class="panel">
+    <div class="panel-head"><h2>Top profesionales</h2></div>
+    <div id="r-profesionales"><div class="empty"></div></div>
+  </div>
+</section>
+
+</main>
+
+<!-- ════════════════════════════════════════════════════ -->
+<!-- MODALES                                              -->
+<!-- ════════════════════════════════════════════════════ -->
+
+<!-- Modal: detalle reserva -->
+<div class="modal-overlay" id="modal-detalle">
+  <div class="modal lg">
+    <h2>Detalle de reserva</h2>
+    <div id="detalle-content"></div>
+    <div class="actions">
+      <button class="btn ghost" onclick="cerrarModal('modal-detalle')">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: cambiar estado -->
+<div class="modal-overlay" id="modal-estado">
+  <div class="modal">
+    <h2>Cambiar estado</h2>
+    <div class="info-box" id="estado-info"></div>
+    <div class="field">
+      <label>Nuevo estado</label>
+      <select id="estado-nuevo"></select>
+    </div>
+    <div class="field">
+      <label>Comentario / motivo</label>
+      <textarea id="estado-comentario" placeholder="Explica el cambio..."></textarea>
+    </div>
+    <div class="actions">
+      <button class="btn ghost" onclick="cerrarModal('modal-estado')">Cancelar</button>
+      <button class="btn primary" onclick="confirmarCambioEstado()">Aplicar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: reagendar -->
+<div class="modal-overlay" id="modal-reagendar">
+  <div class="modal">
+    <h2>Reagendar reserva</h2>
+    <div class="info-box" id="reag-info"></div>
+    <div class="grid-2">
+      <div class="field">
+        <label>Nueva fecha</label>
+        <input type="date" id="reag-fecha">
+      </div>
+      <div class="field">
+        <label>Nueva hora</label>
+        <input type="time" id="reag-hora">
+      </div>
+    </div>
+    <div class="field">
+      <label>Motivo del cambio</label>
+      <textarea id="reag-motivo" placeholder="Motivo obligatorio..."></textarea>
+    </div>
+    <div class="actions">
+      <button class="btn ghost" onclick="cerrarModal('modal-reagendar')">Cancelar</button>
+      <button class="btn primary" onclick="confirmarReagendar()">Reagendar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: registrar pago -->
+<div class="modal-overlay" id="modal-pago">
+  <div class="modal">
+    <h2>💰 Registrar pago</h2>
+    <div class="info-box" id="pago-info"></div>
+    <div class="grid-2">
+      <div class="field">
+        <label>Método de pago</label>
+        <select id="pago-metodo"></select>
+      </div>
+      <div class="field">
+        <label>Monto pagado</label>
+        <input type="number" id="pago-monto" min="0">
+      </div>
+    </div>
+    <div class="actions">
+      <button class="btn ghost" onclick="cerrarModal('modal-pago')">Cancelar</button>
+      <button class="btn success" onclick="confirmarPago()">Cobrar y completar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: comentario -->
+<div class="modal-overlay" id="modal-comentario">
+  <div class="modal">
+    <h2>💬 Agregar comentario</h2>
+    <div class="info-box" id="com-info"></div>
+    <div class="field">
+      <label>Comentario interno</label>
+      <textarea id="com-texto" placeholder="Notas para el equipo..."></textarea>
+    </div>
+    <div class="actions">
+      <button class="btn ghost" onclick="cerrarModal('modal-comentario')">Cancelar</button>
+      <button class="btn primary" onclick="confirmarComentario()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: detalle cliente -->
+<div class="modal-overlay" id="modal-cliente">
+  <div class="modal lg">
+    <h2 id="cli-titulo">Cliente</h2>
+    <div id="cli-content"></div>
+    <div class="actions">
+      <button class="btn ghost" onclick="cerrarModal('modal-cliente')">Cerrar</button>
+      <button class="btn primary" onclick="guardarNotasCliente()">Guardar notas</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: cerrar agenda -->
+<div class="modal-overlay" id="modal-cerrar">
+  <div class="modal">
+    <h2>🚫 Cerrar agenda</h2>
+    <p style="color:var(--text-dim); font-size:13px; margin-bottom:14px">
+      Bloquea reservas para una fecha o rango horario. Puedes reabrir más tarde.
+    </p>
+    <div class="field">
+      <label>Profesional (vacío = todo el negocio)</label>
+      <select id="cer-empleado">
+        <option value="">Todos los profesionales</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Fecha</label>
+      <input type="date" id="cer-fecha">
+    </div>
+    <div class="grid-2">
+      <div class="field">
+        <label>Hora desde (vacío = todo el día)</label>
+        <input type="time" id="cer-desde">
+      </div>
+      <div class="field">
+        <label>Hora hasta</label>
+        <input type="time" id="cer-hasta">
+      </div>
+    </div>
+    <div class="field">
+      <label>Motivo</label>
+      <input type="text" id="cer-motivo" placeholder="Vacaciones, feriado, reunión...">
+    </div>
+    <div class="actions">
+      <button class="btn ghost" onclick="cerrarModal('modal-cerrar')">Cancelar</button>
+      <button class="btn primary" onclick="confirmarCerrar()">Cerrar agenda</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="js/supabase-client.js"></script>
+<script src="js/modules/recibo.js"></script>
+<script>
+// ════════════════════════════════════════════════════════════════
+// AUTH
+// ════════════════════════════════════════════════════════════════
+function checkAuth() {
+  const t = sessionStorage.getItem('admin_token');
+  if (t === window.TENANT.adminToken) {
+    document.getElementById('login').style.display = 'none';
+    document.getElementById('app-header').style.display = 'flex';
+    document.getElementById('app-tabs').style.display = 'flex';
+    document.getElementById('app-main').style.display = 'block';
+    initApp();
+  } else {
+    document.getElementById('login-tenant').textContent = window.TENANT.nombre;
+  }
+}
+function doLogin() {
+  const t = document.getElementById('login-token').value;
+  if (t === window.TENANT.adminToken) {
+    sessionStorage.setItem('admin_token', t);
+    checkAuth();
+  } else {
+    toast('Token incorrecto', 'error');
+  }
+}
+function doLogout() {
+  sessionStorage.removeItem('admin_token');
+  location.reload();
+}
+document.getElementById('login-token').addEventListener('keypress', e => {
+  if (e.key === 'Enter') doLogin();
+});
+
+// ════════════════════════════════════════════════════════════════
+// INIT
+// ════════════════════════════════════════════════════════════════
+let _empleadosCache = [];
+let _serviciosCache = [];
+let _reservasCache = [];
+let _reservaActual = null;
+let _clienteActual = null;
+
+async function initApp() {
+  document.getElementById('brand-name').textContent = window.TENANT.nombre;
+  if (window.TENANT.logoUrl) document.getElementById('logo').src = window.TENANT.logoUrl;
+  
+  // Date pickers default
+  const hoy = new Date().toISOString().split('T')[0];
+  document.getElementById('filter-fecha').value = hoy;
+  
+  const hace30 = new Date(Date.now() - 30*86400000).toISOString().split('T')[0];
+  document.getElementById('rep-desde').value = hace30;
+  document.getElementById('rep-hasta').value = hoy;
+  
+  // Cargar empleados/servicios/estados a los selects
+  _empleadosCache = await API.getEmpleados();
+  _serviciosCache = await API.getServicios();
+  
+  poblarSelects();
+  
+  // Tab handlers
+  document.querySelectorAll('.tab').forEach(btn => {
+    btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+  });
+  
+  // Filtros
+  document.getElementById('filter-fecha').addEventListener('change', cargarReservas);
+  document.getElementById('filter-empleado').addEventListener('change', renderReservas);
+  document.getElementById('filter-estado').addEventListener('change', renderReservas);
+  document.getElementById('filter-search').addEventListener('input', renderReservas);
+  document.getElementById('cli-search').addEventListener('input', debounce(cargarClientes, 300));
+  
+  // Realtime
+  db.channel('admin-reservas')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'reservas' }, () => {
+      if (document.getElementById('page-reservas').classList.contains('active')) cargarReservas();
+    })
+    .subscribe();
+  
+  cargarReservas();
+}
+
+function poblarSelects() {
+  // empleados
+  const optsEmp = '<option value="">Todos los profesionales</option>' +
+    _empleadosCache.map(e => `<option value="${e.id}">${e.nombre}</option>`).join('');
+  document.getElementById('filter-empleado').innerHTML = optsEmp;
+  document.getElementById('cer-empleado').innerHTML = optsEmp;
+  
+  // estados
+  const optsEst = '<option value="">Todos los estados</option>' +
+    Object.values(window.TENANT.estados).map(e => `<option value="${e}">${e}</option>`).join('');
+  document.getElementById('filter-estado').innerHTML = optsEst;
+  document.getElementById('estado-nuevo').innerHTML =
+    Object.values(window.TENANT.estados).map(e => `<option value="${e}">${e}</option>`).join('');
+  
+  // métodos de pago
+  document.getElementById('pago-metodo').innerHTML =
+    window.TENANT.metodosPago.map(m => `<option value="${m.id}">${m.icono} ${m.nombre}</option>`).join('');
+}
+
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+  document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id === 'page-' + name));
+  
+  if (name === 'clientes' && !document.getElementById('lista-clientes').dataset.loaded) cargarClientes();
+  if (name === 'agendas') cargarCerradas();
+}
+
+// ════════════════════════════════════════════════════════════════
+// RESERVAS
+// ════════════════════════════════════════════════════════════════
+async function cargarReservas() {
+  const fecha = document.getElementById('filter-fecha').value;
+  if (!fecha) return;
+  
+  document.getElementById('reservas-title').textContent = 'Reservas del ' + fecha;
+  document.getElementById('lista-reservas').innerHTML = '<div class="empty">⏳ Cargando...</div>';
+  
+  _reservasCache = await API.getReservasPorDia(fecha);
+  renderReservas();
+}
+
+function renderReservas() {
+  const empFilter = document.getElementById('filter-empleado').value;
+  const estFilter = document.getElementById('filter-estado').value;
+  const search = document.getElementById('filter-search').value.toLowerCase().trim();
+  
+  let lista = _reservasCache;
+  if (empFilter) lista = lista.filter(r => r.empleado_id === empFilter);
+  if (estFilter) lista = lista.filter(r => r.estado === estFilter);
+  if (search) lista = lista.filter(r =>
+    (r.nombre_cliente || '').toLowerCase().includes(search) ||
+    (r.email || '').toLowerCase().includes(search) ||
+    (r.codigo || '').toLowerCase().includes(search)
+  );
+  
+  // stats
+  const stats = {
+    total: lista.length,
+    conf: lista.filter(r => r.estado === 'Confirmada').length,
+    curso: lista.filter(r => r.estado === 'En curso').length,
+    comp: lista.filter(r => r.estado === 'Completada').length,
+    ing: lista.filter(r => r.estado !== 'Cancelada').reduce((s,r) => s + (r.monto_pagado || r.precio || 0), 0)
+  };
+  document.getElementById('s-total').textContent = stats.total;
+  document.getElementById('s-conf').textContent = stats.conf;
+  document.getElementById('s-curso').textContent = stats.curso;
+  document.getElementById('s-comp').textContent = stats.comp;
+  document.getElementById('s-ing').textContent = '$' + stats.ing.toLocaleString('es-CL');
+  document.getElementById('reservas-count').textContent = lista.length;
+  
+  const cont = document.getElementById('lista-reservas');
+  if (!lista.length) {
+    cont.innerHTML = '<div class="empty"><div class="icon">📭</div>Sin reservas con esos filtros</div>';
+    return;
+  }
+  
+  cont.innerHTML = lista
+    .sort((a,b) => a.hora_inicio.localeCompare(b.hora_inicio))
+    .map(r => {
+      const estCls = 'estado-' + r.estado.replace(/\s/g, '');
+      const pagado = r.metodo_pago ? '💰' : '';
+      return `
+        <div class="reserva-row">
+          <div class="codigo">${r.codigo || ''}</div>
+          <div class="hora">${r.hora_inicio.slice(0,5)}</div>
+          <div>
+            <div class="nombre">${esc(r.nombre_cliente)} ${pagado}</div>
+            <div class="meta">${esc(r.email)} · ${esc(r.telefono || '—')}</div>
+          </div>
+          <div>
+            <div>${esc(r.servicio_nombre)}</div>
+            <div class="meta">${esc(r.empleado_nombre)} · $${(r.precio||0).toLocaleString('es-CL')}</div>
+          </div>
+          <div><span class="estado-badge ${estCls}">${r.estado}</span></div>
+          <div class="actions">
+            <button class="btn sm" onclick='abrirDetalle(${JSON.stringify(r.id)})' title="Ver detalle">👁️</button>
+            <button class="btn sm" onclick='abrirEstado(${JSON.stringify(r.id)})' title="Cambiar estado">🔄</button>
+            <button class="btn sm" onclick='abrirReagendar(${JSON.stringify(r.id)})' title="Reagendar">📅</button>
+            <button class="btn sm" onclick='abrirPago(${JSON.stringify(r.id)})' title="Cobrar">💰</button>
+            <button class="btn sm" onclick='abrirComentario(${JSON.stringify(r.id)})' title="Comentario">💬</button>
+            <button class="btn sm" onclick='imprimirRecibo(${JSON.stringify(r.id)})' title="Imprimir recibo">🖨️</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+}
+
+function getReserva(id) {
+  return _reservasCache.find(r => r.id === id);
+}
+
+// ── Modal: detalle ──
+async function abrirDetalle(id) {
+  const r = getReserva(id);
+  if (!r) return;
+  _reservaActual = r;
+  
+  const historial = await API.getHistorialReserva(id);
+  
+  document.getElementById('detalle-content').innerHTML = `
+    <div class="info-box">
+      <div><strong>${esc(r.codigo)}</strong> · <span class="estado-badge estado-${r.estado.replace(/\s/g,'')}">${r.estado}</span></div>
+      <div style="margin-top:8px">📅 ${r.fecha} · 🕐 ${r.hora_inicio.slice(0,5)} – ${r.hora_fin.slice(0,5)}</div>
+    </div>
+    
+    <div class="grid-2">
+      <div>
+        <h3 style="font-size:13px; color:var(--text-dim); margin-bottom:8px">CLIENTE</h3>
+        <div><strong>${esc(r.nombre_cliente)}</strong></div>
+        <div style="color:var(--text-dim); font-size:12px">${esc(r.email)}</div>
+        <div style="color:var(--text-dim); font-size:12px">${esc(r.telefono || '—')}</div>
+      </div>
+      <div>
+        <h3 style="font-size:13px; color:var(--text-dim); margin-bottom:8px">SERVICIO</h3>
+        <div><strong>${esc(r.servicio_nombre)}</strong></div>
+        <div style="color:var(--text-dim); font-size:12px">${esc(r.empleado_nombre)}</div>
+        <div style="color:var(--text-dim); font-size:12px">$${(r.precio||0).toLocaleString('es-CL')}</div>
+      </div>
+    </div>
+    
+    ${r.metodo_pago ? `
+      <div class="info-box" style="margin-top:14px">
+        💰 Pagado con <strong>${r.metodo_pago}</strong> · $${(r.monto_pagado||0).toLocaleString('es-CL')}
+        ${r.recibo_numero ? '· Recibo REC-' + String(r.recibo_numero).padStart(5,'0') : ''}
+      </div>
+    ` : ''}
+    
+    ${r.notas_cliente ? `<div class="info-box"><strong>📝 Notas del cliente:</strong> ${esc(r.notas_cliente)}</div>` : ''}
+    ${r.comentario_admin ? `<div class="info-box"><strong>💬 Comentario admin:</strong> ${esc(r.comentario_admin)}</div>` : ''}
+    ${r.motivo_cancelacion ? `<div class="info-box"><strong>❌ Motivo cancelación:</strong> ${esc(r.motivo_cancelacion)}</div>` : ''}
+    ${r.motivo_reagendado ? `<div class="info-box"><strong>🔄 Motivo reagendado:</strong> ${esc(r.motivo_reagendado)}<br><small>Anterior: ${r.fecha_anterior} ${r.hora_anterior}</small></div>` : ''}
+    
+    <h3 style="font-size:13px; color:var(--text-dim); margin:16px 0 8px">HISTORIAL DE CAMBIOS</h3>
+    <div class="timeline">
+      ${historial.length ? historial.map(h => `
+        <div class="timeline-item">
+          <div class="when">${new Date(h.cambiado_at).toLocaleString('es-CL')}</div>
+          <div class="what">${h.estado_anterior || '—'} → <strong>${h.estado_nuevo}</strong></div>
+          ${h.motivo ? `<div class="who">Motivo: ${esc(h.motivo)}</div>` : ''}
+          ${h.comentario ? `<div class="who">Comentario: ${esc(h.comentario)}</div>` : ''}
+          <div class="who">por ${h.cambiado_por}</div>
+        </div>
+      `).join('') : '<div class="empty">Sin cambios registrados</div>'}
+    </div>
+  `;
+  abrirModal('modal-detalle');
+}
+
+// ── Modal: cambiar estado ──
+function abrirEstado(id) {
+  const r = getReserva(id);
+  if (!r) return;
+  _reservaActual = r;
+  document.getElementById('estado-info').innerHTML = `<strong>${esc(r.codigo)}</strong> · ${esc(r.nombre_cliente)} · ${r.fecha} ${r.hora_inicio.slice(0,5)}<br>Estado actual: <strong>${r.estado}</strong>`;
+  document.getElementById('estado-nuevo').value = r.estado;
+  document.getElementById('estado-comentario').value = '';
+  abrirModal('modal-estado');
+}
+
+async function confirmarCambioEstado() {
+  const nuevo = document.getElementById('estado-nuevo').value;
+  const comentario = document.getElementById('estado-comentario').value.trim();
+  if (!comentario) { toast('El comentario es obligatorio', 'error'); return; }
+  
+  let res;
+  if (nuevo === 'Cancelada') {
+    res = await API.cancelarReserva(_reservaActual.id, comentario, 'admin');
+  } else {
+    res = await API.cambiarEstado(_reservaActual.id, nuevo, comentario, 'admin');
+  }
+  
+  if (res.ok) {
+    toast('Estado actualizado', 'success');
+    cerrarModal('modal-estado');
+    cargarReservas();
+  } else {
+    toast(res.error || 'Error', 'error');
+  }
+}
+
+// ── Modal: reagendar ──
+function abrirReagendar(id) {
+  const r = getReserva(id);
+  if (!r) return;
+  _reservaActual = r;
+  document.getElementById('reag-info').innerHTML = `<strong>${esc(r.codigo)}</strong> · ${esc(r.nombre_cliente)}<br>Actual: <strong>${r.fecha} ${r.hora_inicio.slice(0,5)}</strong>`;
+  document.getElementById('reag-fecha').value = r.fecha;
+  document.getElementById('reag-hora').value = r.hora_inicio.slice(0,5);
+  document.getElementById('reag-motivo').value = '';
+  abrirModal('modal-reagendar');
+}
+
+async function confirmarReagendar() {
+  const fecha = document.getElementById('reag-fecha').value;
+  const hora = document.getElementById('reag-hora').value;
+  const motivo = document.getElementById('reag-motivo').value.trim();
+  if (!fecha || !hora) { toast('Fecha y hora obligatorias', 'error'); return; }
+  if (!motivo) { toast('Motivo obligatorio', 'error'); return; }
+  
+  const res = await API.reagendarReserva(_reservaActual.id, fecha, hora, motivo);
+  if (res.ok) {
+    toast('Reserva reagendada', 'success');
+    cerrarModal('modal-reagendar');
+    cargarReservas();
+  } else {
+    toast(res.error || 'Error', 'error');
+  }
+}
+
+// ── Modal: pago ──
+function abrirPago(id) {
+  const r = getReserva(id);
+  if (!r) return;
+  _reservaActual = r;
+  document.getElementById('pago-info').innerHTML = `<strong>${esc(r.codigo)}</strong> · ${esc(r.servicio_nombre)} · ${esc(r.nombre_cliente)}`;
+  document.getElementById('pago-monto').value = r.precio || 0;
+  abrirModal('modal-pago');
+}
+
+async function confirmarPago() {
+  const metodo = document.getElementById('pago-metodo').value;
+  const monto = parseInt(document.getElementById('pago-monto').value) || 0;
+  if (!monto) { toast('Monto inválido', 'error'); return; }
+  
+  const res = await API.registrarPago(_reservaActual.id, metodo, monto);
+  if (res.ok) {
+    toast('Pago registrado', 'success');
+    cerrarModal('modal-pago');
+    await cargarReservas();
+    
+    // Ofrecer imprimir recibo
+    setTimeout(() => {
+      if (confirm('¿Imprimir recibo ahora?')) Recibo.imprimir(res.reserva);
+    }, 200);
+  } else {
+    toast(res.error || 'Error', 'error');
+  }
+}
+
+// ── Modal: comentario ──
+function abrirComentario(id) {
+  const r = getReserva(id);
+  if (!r) return;
+  _reservaActual = r;
+  document.getElementById('com-info').innerHTML = `<strong>${esc(r.codigo)}</strong> · ${esc(r.nombre_cliente)}`;
+  document.getElementById('com-texto').value = r.comentario_admin || '';
+  abrirModal('modal-comentario');
+}
+
+async function confirmarComentario() {
+  const texto = document.getElementById('com-texto').value.trim();
+  const res = await API.agregarComentario(_reservaActual.id, texto);
+  if (res.ok) {
+    toast('Comentario guardado', 'success');
+    cerrarModal('modal-comentario');
+    cargarReservas();
+  } else {
+    toast(res.error || 'Error', 'error');
+  }
+}
+
+// ── Imprimir recibo ──
+function imprimirRecibo(id) {
+  const r = getReserva(id);
+  if (r) Recibo.imprimir(r);
+}
+
+// ════════════════════════════════════════════════════════════════
+// CLIENTES
+// ════════════════════════════════════════════════════════════════
+async function cargarClientes() {
+  const filtro = document.getElementById('cli-search').value.trim();
+  document.getElementById('lista-clientes').innerHTML = '<div class="empty">⏳ Cargando...</div>';
+  
+  const clientes = await API.getClientes(filtro);
+  document.getElementById('lista-clientes').dataset.loaded = '1';
+  document.getElementById('cli-count').textContent = clientes.length;
+  
+  if (!clientes.length) {
+    document.getElementById('lista-clientes').innerHTML = '<div class="empty"><div class="icon">👥</div>Sin clientes</div>';
+    return;
+  }
+  
+  document.getElementById('lista-clientes').innerHTML = clientes.map(c => `
+    <div class="cliente-card" onclick='abrirCliente(${JSON.stringify(c.id)})'>
+      <div>
+        <div class="nombre">${esc(c.nombre)} <span class="etiqueta">${c.etiqueta || ''}</span></div>
+        <div class="meta">${esc(c.email)} · ${esc(c.telefono || '—')}</div>
+      </div>
+      <div class="stats-mini">
+        <strong>${c.total_reservas || 0}</strong> reservas
+        <div>$${(c.monto_total || 0).toLocaleString('es-CL')}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function abrirCliente(id) {
+  const clientes = await API.getClientes('');
+  const c = clientes.find(x => x.id === id);
+  if (!c) return;
+  _clienteActual = c;
+  
+  document.getElementById('cli-titulo').textContent = c.nombre;
+  
+  const historial = await API.getHistorialCliente(c.email);
+  
+  document.getElementById('cli-content').innerHTML = `
+    <div class="info-box">
+      📧 ${esc(c.email)}<br>
+      📞 ${esc(c.telefono || '—')}<br>
+      🏷️ ${c.etiqueta || ''}
+    </div>
+    
+    <div class="grid-2">
+      <div class="stat"><div class="label">Total reservas</div><div class="value">${c.total_reservas || 0}</div></div>
+      <div class="stat amber"><div class="label">Monto total</div><div class="value">$${(c.monto_total || 0).toLocaleString('es-CL')}</div></div>
+    </div>
+    
+    <div class="field" style="margin-top:14px">
+      <label>Notas internas</label>
+      <textarea id="cli-notas">${esc(c.notas_internas || '')}</textarea>
+    </div>
+    
+    <h3 style="font-size:13px; color:var(--text-dim); margin:16px 0 8px">HISTORIAL DE RESERVAS (${historial.length})</h3>
+    <div style="max-height:300px; overflow-y:auto">
+      ${historial.length ? historial.map(h => `
+        <div class="reserva-row" style="grid-template-columns: 90px 1fr auto">
+          <div class="codigo">${h.fecha}</div>
+          <div>
+            <div class="nombre">${esc(h.servicio_nombre)}</div>
+            <div class="meta">${esc(h.empleado_nombre)} · ${h.hora_inicio.slice(0,5)}</div>
+          </div>
+          <div><span class="estado-badge estado-${h.estado.replace(/\s/g,'')}">${h.estado}</span></div>
+        </div>
+      `).join('') : '<div class="empty">Sin historial</div>'}
+    </div>
+  `;
+  abrirModal('modal-cliente');
+}
+
+async function guardarNotasCliente() {
+  if (!_clienteActual) return;
+  const notas = document.getElementById('cli-notas').value;
+  const res = await API.actualizarCliente(_clienteActual.id, { notas_internas: notas });
+  if (res.ok) {
+    toast('Notas guardadas', 'success');
+    cerrarModal('modal-cliente');
+  } else {
+    toast(res.error || 'Error', 'error');
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+// AGENDAS CERRADAS
+// ════════════════════════════════════════════════════════════════
+async function cargarCerradas() {
+  const desde = new Date().toISOString().split('T')[0];
+  const hasta = new Date(Date.now() + 90*86400000).toISOString().split('T')[0];
+  
+  const cerradas = await API.getAgendasCerradas(desde, hasta);
+  document.getElementById('cer-count').textContent = cerradas.length;
+  
+  if (!cerradas.length) {
+    document.getElementById('lista-cerradas').innerHTML = '<div class="empty"><div class="icon">✅</div>Sin agendas cerradas próximas</div>';
+    return;
+  }
+  
+  document.getElementById('lista-cerradas').innerHTML = cerradas.map(c => {
+    const emp = c.empleado_id ? (_empleadosCache.find(e => e.id === c.empleado_id)?.nombre || c.empleado_id) : 'Todo el negocio';
+    const horario = c.hora_inicio ? `${c.hora_inicio.slice(0,5)} – ${(c.hora_fin || c.hora_inicio).slice(0,5)}` : 'Todo el día';
+    return `
+      <div class="reserva-row" style="grid-template-columns: 100px 1fr 1fr 1fr auto">
+        <div class="hora">${c.fecha}</div>
+        <div>${esc(emp)}</div>
+        <div>${horario}</div>
+        <div>${esc(c.motivo || '—')}</div>
+        <div><button class="btn sm success" onclick='reabrirAgenda(${c.id})'>↻ Reabrir</button></div>
+      </div>
+    `;
+  }).join('');
+}
+
+function abrirModalCerrar() {
+  document.getElementById('cer-fecha').value = new Date().toISOString().split('T')[0];
+  document.getElementById('cer-desde').value = '';
+  document.getElementById('cer-hasta').value = '';
+  document.getElementById('cer-motivo').value = '';
+  abrirModal('modal-cerrar');
+}
+
+async function confirmarCerrar() {
+  const payload = {
+    empleado_id: document.getElementById('cer-empleado').value || null,
+    fecha: document.getElementById('cer-fecha').value,
+    hora_inicio: document.getElementById('cer-desde').value || null,
+    hora_fin: document.getElementById('cer-hasta').value || null,
+    motivo: document.getElementById('cer-motivo').value || ''
+  };
+  if (!payload.fecha) { toast('Fecha obligatoria', 'error'); return; }
+  
+  const res = await API.cerrarAgenda(payload);
+  if (res.ok) {
+    toast('Agenda cerrada', 'success');
+    cerrarModal('modal-cerrar');
+    cargarCerradas();
+  } else {
+    toast(res.error || 'Error', 'error');
+  }
+}
+
+async function reabrirAgenda(id) {
+  if (!confirm('¿Reabrir esta agenda? Los slots volverán a estar disponibles.')) return;
+  const res = await API.reabrirAgenda(id);
+  if (res.ok) {
+    toast('Agenda reabierta', 'success');
+    cargarCerradas();
+  } else {
+    toast(res.error || 'Error', 'error');
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+// REPORTES
+// ════════════════════════════════════════════════════════════════
+async function cargarReporte() {
+  const desde = document.getElementById('rep-desde').value;
+  const hasta = document.getElementById('rep-hasta').value;
+  if (!desde || !hasta) return;
+  
+  const { data } = await db.from('reservas').select('*').gte('fecha', desde).lte('fecha', hasta);
+  const reservas = data || [];
+  
+  document.getElementById('r-total').textContent = reservas.length;
+  document.getElementById('r-comp').textContent  = reservas.filter(r => r.estado === 'Completada').length;
+  document.getElementById('r-canc').textContent  = reservas.filter(r => r.estado === 'Cancelada').length;
+  document.getElementById('r-ns').textContent    = reservas.filter(r => r.estado === 'No se presentó').length;
+  
+  const ingreso = reservas
+    .filter(r => r.estado === 'Completada')
+    .reduce((s,r) => s + (r.monto_pagado || r.precio || 0), 0);
+  document.getElementById('r-ing').textContent = '$' + ingreso.toLocaleString('es-CL');
+  
+  // Top servicios
+  const porSrv = {};
+  reservas.filter(r => r.estado !== 'Cancelada').forEach(r => {
+    porSrv[r.servicio_nombre] = (porSrv[r.servicio_nombre] || 0) + 1;
+  });
+  const topSrv = Object.entries(porSrv).sort((a,b) => b[1] - a[1]).slice(0, 10);
+  
+  document.getElementById('r-servicios').innerHTML = topSrv.length ? topSrv.map(([n,c]) => `
+    <div class="reserva-row" style="grid-template-columns: 1fr auto">
+      <div>${esc(n)}</div>
+      <div><strong>${c}</strong> reservas</div>
+    </div>
+  `).join('') : '<div class="empty">Sin datos</div>';
+  
+  // Top profesionales
+  const porEmp = {};
+  reservas.filter(r => r.estado === 'Completada').forEach(r => {
+    if (!porEmp[r.empleado_nombre]) porEmp[r.empleado_nombre] = { n: 0, monto: 0 };
+    porEmp[r.empleado_nombre].n++;
+    porEmp[r.empleado_nombre].monto += (r.monto_pagado || r.precio || 0);
+  });
+  const topEmp = Object.entries(porEmp).sort((a,b) => b[1].monto - a[1].monto).slice(0, 10);
+  
+  document.getElementById('r-profesionales').innerHTML = topEmp.length ? topEmp.map(([n,d]) => `
+    <div class="reserva-row" style="grid-template-columns: 1fr auto auto">
+      <div>${esc(n)}</div>
+      <div>${d.n} completadas</div>
+      <div><strong>$${d.monto.toLocaleString('es-CL')}</strong></div>
+    </div>
+  `).join('') : '<div class="empty">Sin datos</div>';
+}
+
+// ════════════════════════════════════════════════════════════════
+// HELPERS
+// ════════════════════════════════════════════════════════════════
+function abrirModal(id) { document.getElementById(id).classList.add('open'); }
+function cerrarModal(id) { document.getElementById(id).classList.remove('open'); }
+function esc(s) { return String(s || '').replace(/[<>&"']/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c])); }
+function debounce(fn, ms) {
+  let t;
+  return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+}
+function toast(msg, tipo = '') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast show ' + tipo;
+  setTimeout(() => el.classList.remove('show'), 2800);
+}
+
+// Cerrar modales al hacer click fuera
+document.querySelectorAll('.modal-overlay').forEach(o => {
+  o.addEventListener('click', e => {
+    if (e.target === o) o.classList.remove('open');
+  });
+});
+
+checkAuth();
+</script>
+</body>
+</html>
