@@ -1,5 +1,5 @@
 /* ================================================================
-   PLATAFORMA AGENDA — calendar.js v3
+   PLATAFORMA AGENDA — calendar.js v3.1 (fix recursión)
    
    Calendario visual + grid de slots.
    Se integra con API.getDisponibilidad() y dispara eventos.
@@ -19,12 +19,11 @@ const CalendarState = {
 };
 
 // ════════════════════════════════════════════════════════════════
-// INYECTAR ESTILOS (versión mejorada)
+// INYECTAR ESTILOS
 // ════════════════════════════════════════════════════════════════
 
 (function inyectarCalendarStyles() {
   const css = `
-    /* Calendario principal */
     .cal-wrap {
       font-family: inherit;
       user-select: none;
@@ -119,7 +118,6 @@ const CalendarState = {
       border-color: transparent;
     }
     
-    /* Slots grid */
     .slots-wrapper {
       display: flex;
       flex-direction: column;
@@ -213,7 +211,6 @@ const CalendarState = {
       border: 1px solid var(--border, #1E293B);
     }
     
-    /* Scrollbar personalizada */
     .slots-wrapper::-webkit-scrollbar {
       width: 6px;
     }
@@ -287,8 +284,7 @@ const Calendar = {
     html += '<button class="cal-btn" data-action="next">›</button>';
     html += '</div><div class="cal-grid">';
     
-    const diasSemana = (window.TENANT && window.TENANT.diasSemana) || 
-      ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+    const diasSemana = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
     diasSemana.forEach(d => {
       html += `<div class="cal-day-name">${d}</div>`;
     });
@@ -341,7 +337,6 @@ const Calendar = {
         CalendarState.fechaSeleccionada = fecha;
         this.render();
         if (this.onDateSelect) this.onDateSelect(fecha);
-        // Disparar evento para app.js
         document.dispatchEvent(new CustomEvent('fechaSeleccionada', { 
           detail: { fecha } 
         }));
@@ -351,10 +346,10 @@ const Calendar = {
 };
 
 // ════════════════════════════════════════════════════════════════
-// RENDER DE SLOTS (basado en disponibilidad de API)
+// RENDER DE SLOTS (CORREGIDO - SIN RECURSIÓN)
 // ════════════════════════════════════════════════════════════════
 
-function renderSlots(containerId, disponibilidad, onSlotSelect) {
+function renderSlotsView(containerId, disponibilidad, onSlotSelect) {
   const cont = document.getElementById(containerId);
   if (!cont) return;
   
@@ -429,14 +424,12 @@ function renderSlots(containerId, disponibilidad, onSlotSelect) {
       const horaInicio = btn.dataset.horaInicio;
       const horaFin = btn.dataset.horaFin;
       
-      // Actualizar estado visual
       document.querySelectorAll('.slot-btn').forEach(b => b.classList.remove('slot-btn--selected'));
       btn.classList.add('slot-btn--selected');
       
       CalendarState.empleadoSeleccionado = empleadoID;
       CalendarState.slotSeleccionado = horaInicio;
       
-      // Disparar evento para app.js
       document.dispatchEvent(new CustomEvent('slotSeleccionado', {
         detail: { empleadoID, empleadoNombre, horaInicio, horaFin }
       }));
@@ -455,7 +448,6 @@ function renderSlots(containerId, disponibilidad, onSlotSelect) {
 async function cargarDisponibilidad(fecha, servicioID) {
   if (!fecha || !servicioID) return null;
   
-  // Mostrar loader en slots
   const slotsContainer = document.getElementById('slots-container');
   if (slotsContainer) {
     slotsContainer.innerHTML = '<div class="slots-vacio">⏳ Cargando disponibilidad...</div>';
@@ -468,10 +460,11 @@ async function cargarDisponibilidad(fecha, servicioID) {
       CalendarState.disponibilidad = result;
       CalendarState.servicioSeleccionado = servicioID;
       
-      // Renderizar slots
-      renderSlots('slots-container', result, (slot) => {
-        // Actualizar resumen en sidebar
-        actualizarResumenSeleccion();
+      // Usar la función correcta (sin recursión)
+      renderSlotsView('slots-container', result, (slot) => {
+        if (typeof actualizarResumenSeleccion !== 'undefined') {
+          actualizarResumenSeleccion();
+        }
       });
       
       return result;
@@ -564,7 +557,7 @@ function actualizarResumenSeleccion() {
 
 function escapeHtml(str) {
   if (!str) return '';
-  return str.replace(/[&<>]/g, function(m) {
+  return String(str).replace(/[&<>]/g, function(m) {
     if (m === '&') return '&amp;';
     if (m === '<') return '&lt;';
     if (m === '>') return '&gt;';
@@ -573,45 +566,16 @@ function escapeHtml(str) {
 }
 
 // ════════════════════════════════════════════════════════════════
-// FUNCIONES GLOBALES PARA COMPATIBILIDAD CON app.js EXISTENTE
+// FUNCIONES GLOBALES PARA COMPATIBILIDAD
 // ════════════════════════════════════════════════════════════════
 
-window.renderCalendario = function(containerId) {
-  Calendar.init(containerId, (fecha) => {
-    // Cuando se selecciona fecha, cargar disponibilidad
-    if (CalendarState.servicioSeleccionado) {
-      cargarDisponibilidad(fecha, CalendarState.servicioSeleccionado);
-    }
-  });
-};
+// NO redefinir renderSlots como global para evitar conflicto
+// En su lugar, exponemos las funciones necesarias
 
-window.seleccionarFecha = function(fecha) {
-  Calendar.setFecha(fecha);
-  if (CalendarState.servicioSeleccionado) {
-    cargarDisponibilidad(fecha, CalendarState.servicioSeleccionado);
-  }
-};
-
-window.renderSlots = function(containerId, disponibilidad) {
-  renderSlots(containerId, disponibilidad, (slot) => {
-    actualizarResumenSeleccion();
-  });
-};
-
-window.slotClick = function(empleadoID, empleadoNombre, horaInicio, horaFin) {
-  CalendarState.empleadoSeleccionado = empleadoID;
-  CalendarState.slotSeleccionado = horaInicio;
-  actualizarResumenSeleccion();
-  
-  document.dispatchEvent(new CustomEvent('slotSeleccionado', {
-    detail: { empleadoID, empleadoNombre, horaInicio, horaFin }
-  }));
-};
-
-// Exportar para uso global
 window.Calendar = Calendar;
 window.CalendarState = CalendarState;
 window.cargarDisponibilidad = cargarDisponibilidad;
 window.actualizarResumenSeleccion = actualizarResumenSeleccion;
+window.renderSlotsView = renderSlotsView;  // Nombre diferente para evitar recursión
 
-console.log('✅ calendar.js v3 cargado');
+console.log('✅ calendar.js v3.1 cargado (fix recursión)');
