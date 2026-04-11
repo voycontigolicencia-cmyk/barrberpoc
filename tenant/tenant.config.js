@@ -99,6 +99,9 @@ window.TENANT = {
   // Modo de envío al Apps Script tras crear reserva en Supabase:
   // 'fire-and-forget' | 'await' | 'hybrid'
   appsScriptMode: 'hybrid',
+
+  // ✅ AÑADE ESTA LÍNEA - DEBE COINCIDIR CON WEBHOOK_SECRET EN APPS SCRIPT
+  webhookSecret: 'Javiteamo', 
   
   // Realtime monitor: cada cuánto verificar conexión (ms)
   monitorPingInterval: 30000,
