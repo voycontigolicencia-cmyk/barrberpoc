@@ -443,7 +443,12 @@ const Wizard = {
           window.CalendarState.empleadoSeleccionado = empId;
           // Forzar re-render de slots con el filtro
           if (this.disponibilidad) {
-            renderSlots('slots-container', { empleados: this.disponibilidad, servicio: this.servicioElegido });
+            // ✅ CORREGIDO - usar renderSlotsView
+if (typeof renderSlotsView !== 'undefined') {
+  renderSlotsView('slots-container', { empleados: this.disponibilidad, servicio: this.servicioElegido });
+} else if (typeof window.renderSlotsView !== 'undefined') {
+  window.renderSlotsView('slots-container', { empleados: this.disponibilidad, servicio: this.servicioElegido });
+}
           }
         }
       });
