@@ -569,13 +569,11 @@ function escapeHtml(str) {
 // FUNCIONES GLOBALES PARA COMPATIBILIDAD
 // ════════════════════════════════════════════════════════════════
 
-// NO redefinir renderSlots como global para evitar conflicto
-// En su lugar, exponemos las funciones necesarias
-
 window.Calendar = Calendar;
 window.CalendarState = CalendarState;
 window.cargarDisponibilidad = cargarDisponibilidad;
 window.actualizarResumenSeleccion = actualizarResumenSeleccion;
-window.renderSlotsView = renderSlotsView;  // Nombre diferente para evitar recursión
+window.renderSlotsView = renderSlotsView;
+window.renderSlots = renderSlotsView;  // ← ALIAS para compatibilidad con app.js
 
 console.log('✅ calendar.js v3.1 cargado (fix recursión)');
