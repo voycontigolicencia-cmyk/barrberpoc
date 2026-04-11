@@ -1,102 +1,263 @@
 /* ================================================================
-   PLATAFORMA AGENDA — calendar.js
+   PLATAFORMA AGENDA — calendar.js v3
    
-   Date picker simple. Se monta en #calendario y llama al callback
-   con la fecha en formato yyyy-MM-dd al hacer click en un día.
-   
-   Respeta TENANT.diasOperacion (días que el negocio opera).
-   No deja seleccionar fechas pasadas.
+   Calendario visual + grid de slots.
+   Se integra con API.getDisponibilidad() y dispara eventos.
    ================================================================ */
+
+// ════════════════════════════════════════════════════════════════
+// ESTADO GLOBAL DEL CALENDARIO
+// ════════════════════════════════════════════════════════════════
+
+const CalendarState = {
+  fechaSeleccionada: null,
+  mesActual: new Date(),
+  servicioSeleccionado: null,
+  disponibilidad: {},
+  empleadoSeleccionado: null,
+  slotSeleccionado: null
+};
+
+// ════════════════════════════════════════════════════════════════
+// INYECTAR ESTILOS (versión mejorada)
+// ════════════════════════════════════════════════════════════════
 
 (function inyectarCalendarStyles() {
   const css = `
-    .cal-wrap { font-family: inherit; user-select: none; }
+    /* Calendario principal */
+    .cal-wrap {
+      font-family: inherit;
+      user-select: none;
+      background: var(--card, #131829);
+      border-radius: var(--r-lg, 12px);
+      padding: 16px;
+    }
     .cal-head {
-      display: flex; justify-content: space-between; align-items: center;
-      margin-bottom: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
     }
     .cal-title {
-      font-size: 15px; font-weight: 600; color: var(--text, #fff);
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text, #F1F5F9);
       text-transform: capitalize;
     }
     .cal-btn {
-      background: var(--card, #1A1A2E);
-      border: 1px solid var(--border, #2A2A40);
-      width: 32px; height: 32px;
-      border-radius: 8px;
+      background: var(--bg-input, #0F1424);
+      border: 1px solid var(--border, #1E293B);
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
       cursor: pointer;
       color: var(--text, #fff);
-      font-size: 16px;
-      transition: all .2s;
+      font-size: 18px;
+      font-weight: 700;
+      transition: all 0.2s;
     }
-    .cal-btn:hover { background: var(--gold, #C9A84C); color: #000; }
+    .cal-btn:hover {
+      background: var(--gold, #C9A84C);
+      color: #000;
+      border-color: var(--gold, #C9A84C);
+    }
     .cal-grid {
       display: grid;
       grid-template-columns: repeat(7, 1fr);
-      gap: 4px;
+      gap: 6px;
     }
     .cal-day-name {
       text-align: center;
       font-size: 11px;
       font-weight: 600;
       color: var(--muted, #94A3B8);
-      padding: 6px 0;
+      padding: 8px 0;
       text-transform: uppercase;
+      letter-spacing: 0.5px;
     }
     .cal-day {
       aspect-ratio: 1;
       display: flex;
       align-items: center;
       justify-content: center;
-      border-radius: 8px;
-      font-size: 13px;
+      border-radius: 10px;
+      font-size: 14px;
       font-weight: 500;
       cursor: pointer;
-      transition: all .15s;
+      transition: all 0.2s;
       color: var(--text, #fff);
-      border: 1px solid transparent;
+      background: var(--bg-input, #0F1424);
+      border: 1px solid var(--border, #1E293B);
     }
     .cal-day:hover:not(.cal-day--disabled):not(.cal-day--empty) {
-      background: rgba(201,168,76,.15);
+      background: rgba(201, 168, 76, 0.2);
       border-color: var(--gold, #C9A84C);
+      transform: scale(1.02);
     }
     .cal-day--today {
-      background: rgba(201,168,76,.08);
-      border-color: rgba(201,168,76,.4);
+      background: rgba(201, 168, 76, 0.15);
+      border-color: var(--gold, #C9A84C);
+      color: var(--gold, #C9A84C);
+      font-weight: 700;
     }
     .cal-day--selected {
       background: var(--gold, #C9A84C);
       color: #000;
       font-weight: 700;
+      border-color: var(--gold, #C9A84C);
+      transform: scale(0.98);
     }
     .cal-day--disabled {
-      opacity: .25;
+      opacity: 0.3;
       cursor: not-allowed;
       text-decoration: line-through;
+      background: var(--border, #1E293B);
     }
-    .cal-day--empty { cursor: default; }
+    .cal-day--empty {
+      cursor: default;
+      background: transparent;
+      border-color: transparent;
+    }
+    
+    /* Slots grid */
+    .slots-wrapper {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      max-height: 500px;
+      overflow-y: auto;
+      padding: 4px;
+    }
+    .slots-barbero {
+      background: var(--card, #131829);
+      border: 1px solid var(--border, #1E293B);
+      border-radius: 14px;
+      overflow: hidden;
+      transition: all 0.2s;
+    }
+    .slots-barbero:hover {
+      border-color: var(--gold, #C9A84C);
+    }
+    .slots-barbero-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 16px;
+      background: var(--bg-input, #0F1424);
+      border-bottom: 2px solid;
+      cursor: pointer;
+    }
+    .slots-barbero-avatar {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      font-weight: 700;
+      color: #fff;
+    }
+    .slots-barbero-nombre {
+      font-weight: 700;
+      font-size: 16px;
+      color: var(--text, #fff);
+    }
+    .slots-barbero-skills {
+      font-size: 11px;
+      color: var(--muted, #94A3B8);
+      margin-top: 2px;
+    }
+    .slots-horas {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 16px;
+    }
+    .slot-btn {
+      background: var(--bg-input, #0F1424);
+      border: 1px solid var(--border, #1E293B);
+      border-radius: 10px;
+      padding: 8px 14px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text, #fff);
+      cursor: pointer;
+      transition: all 0.2s;
+      font-family: monospace;
+    }
+    .slot-btn:hover {
+      background: var(--gold, #C9A84C);
+      color: #000;
+      border-color: var(--gold, #C9A84C);
+      transform: translateY(-2px);
+    }
+    .slot-btn--selected {
+      background: var(--gold, #C9A84C);
+      color: #000;
+      border-color: var(--gold, #C9A84C);
+      box-shadow: 0 0 0 2px rgba(201, 168, 76, 0.3);
+    }
+    .slots-sin-horas {
+      padding: 16px;
+      text-align: center;
+      color: var(--muted, #94A3B8);
+      font-size: 13px;
+    }
+    .slots-vacio {
+      text-align: center;
+      padding: 40px;
+      color: var(--muted, #94A3B8);
+      background: var(--card, #131829);
+      border-radius: 14px;
+      border: 1px solid var(--border, #1E293B);
+    }
+    
+    /* Scrollbar personalizada */
+    .slots-wrapper::-webkit-scrollbar {
+      width: 6px;
+    }
+    .slots-wrapper::-webkit-scrollbar-track {
+      background: var(--bg-input, #0F1424);
+      border-radius: 10px;
+    }
+    .slots-wrapper::-webkit-scrollbar-thumb {
+      background: var(--gold, #C9A84C);
+      border-radius: 10px;
+    }
   `;
-  const style = document.createElement('style');
-  style.textContent = css;
-  document.head.appendChild(style);
+  
+  if (!document.querySelector('#calendar-styles')) {
+    const style = document.createElement('style');
+    style.id = 'calendar-styles';
+    style.textContent = css;
+    document.head.appendChild(style);
+  }
 })();
+
+// ════════════════════════════════════════════════════════════════
+// CALENDARIO PRINCIPAL
+// ════════════════════════════════════════════════════════════════
 
 const Calendar = {
   containerId: null,
-  callback: null,
-  current: new Date(),
-  selected: null,
+  onDateSelect: null,
   
-  init(containerId, callback) {
+  init(containerId, onDateSelect) {
     this.containerId = containerId;
-    this.callback = callback;
-    this.current = new Date();
-    this.current.setDate(1);
+    this.onDateSelect = onDateSelect;
+    CalendarState.mesActual = new Date();
+    CalendarState.mesActual.setDate(1);
     this.render();
   },
   
   reset() {
-    this.selected = null;
+    CalendarState.fechaSeleccionada = null;
+    this.render();
+  },
+  
+  setFecha(fechaStr) {
+    CalendarState.fechaSeleccionada = fechaStr;
     this.render();
   },
   
@@ -104,11 +265,14 @@ const Calendar = {
     const cont = document.getElementById(this.containerId);
     if (!cont) return;
     
-    const year = this.current.getFullYear();
-    const month = this.current.getMonth();
-    const monthName = this.current.toLocaleDateString('es-CL', { month: 'long', year: 'numeric' });
+    const year = CalendarState.mesActual.getFullYear();
+    const month = CalendarState.mesActual.getMonth();
+    const monthName = CalendarState.mesActual.toLocaleDateString('es-CL', { 
+      month: 'long', 
+      year: 'numeric' 
+    });
     
-    const primerDia = new Date(year, month, 1).getDay(); // 0=dom
+    const primerDia = new Date(year, month, 1).getDay();
     const ultimoDia = new Date(year, month + 1, 0).getDate();
     
     const hoy = new Date();
@@ -123,16 +287,16 @@ const Calendar = {
     html += '<button class="cal-btn" data-action="next">›</button>';
     html += '</div><div class="cal-grid">';
     
-    ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'].forEach(d => {
+    const diasSemana = (window.TENANT && window.TENANT.diasSemana) || 
+      ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+    diasSemana.forEach(d => {
       html += `<div class="cal-day-name">${d}</div>`;
     });
     
-    // Espacios antes del día 1
     for (let i = 0; i < primerDia; i++) {
       html += '<div class="cal-day cal-day--empty"></div>';
     }
     
-    // Días del mes
     for (let d = 1; d <= ultimoDia; d++) {
       const fecha = new Date(year, month, d);
       const fechaStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
@@ -142,7 +306,7 @@ const Calendar = {
       const noOpera = !diasOp.includes(diaSemana);
       const disabled = esPasado || noOpera;
       const esHoy = fecha.getTime() === hoy.getTime();
-      const esSelected = this.selected === fechaStr;
+      const esSelected = CalendarState.fechaSeleccionada === fechaStr;
       
       let cls = 'cal-day';
       if (disabled) cls += ' cal-day--disabled';
@@ -155,27 +319,299 @@ const Calendar = {
     html += '</div></div>';
     cont.innerHTML = html;
     
-    // Handlers
-    cont.querySelectorAll('[data-action="prev"]').forEach(b => {
-      b.addEventListener('click', () => {
-        this.current.setMonth(this.current.getMonth() - 1);
+    // Event handlers
+    cont.querySelectorAll('[data-action="prev"]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        CalendarState.mesActual.setMonth(CalendarState.mesActual.getMonth() - 1);
         this.render();
       });
     });
-    cont.querySelectorAll('[data-action="next"]').forEach(b => {
-      b.addEventListener('click', () => {
-        this.current.setMonth(this.current.getMonth() + 1);
+    cont.querySelectorAll('[data-action="next"]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        CalendarState.mesActual.setMonth(CalendarState.mesActual.getMonth() + 1);
         this.render();
       });
     });
+    
     cont.querySelectorAll('.cal-day:not(.cal-day--disabled):not(.cal-day--empty)').forEach(day => {
       day.addEventListener('click', () => {
-        this.selected = day.dataset.fecha;
+        const fecha = day.dataset.fecha;
+        CalendarState.fechaSeleccionada = fecha;
         this.render();
-        if (this.callback) this.callback(this.selected);
+        if (this.onDateSelect) this.onDateSelect(fecha);
+        // Disparar evento para app.js
+        document.dispatchEvent(new CustomEvent('fechaSeleccionada', { 
+          detail: { fecha } 
+        }));
       });
     });
   }
 };
 
+// ════════════════════════════════════════════════════════════════
+// RENDER DE SLOTS (basado en disponibilidad de API)
+// ════════════════════════════════════════════════════════════════
+
+function renderSlots(containerId, disponibilidad, onSlotSelect) {
+  const cont = document.getElementById(containerId);
+  if (!cont) return;
+  
+  if (!disponibilidad || !disponibilidad.empleados || Object.keys(disponibilidad.empleados).length === 0) {
+    cont.innerHTML = '<p class="slots-vacio">Selecciona un servicio y fecha para ver disponibilidad.</p>';
+    return;
+  }
+  
+  const profesionales = Object.values(disponibilidad.empleados).filter(emp => emp.hayDisponibilidad);
+  
+  if (profesionales.length === 0) {
+    cont.innerHTML = '<p class="slots-vacio">No hay disponibilidad para esta fecha. Prueba con otro día.</p>';
+    return;
+  }
+  
+  const profLabel = (window.TENANT && window.TENANT.profesionalLabel) || 'profesional';
+  const profLabelCap = profLabel.charAt(0).toUpperCase() + profLabel.slice(1);
+  
+  let html = '<div class="slots-wrapper">';
+  
+  profesionales.forEach(emp => {
+    const libres = emp.slots.filter(s => s.disponible);
+    const color = emp.empleado.color || '#C9A84C';
+    
+    html += `
+      <div class="slots-barbero" data-empleado-id="${emp.empleado.id}">
+        <div class="slots-barbero-header" style="border-bottom-color: ${color}">
+          <div class="slots-barbero-avatar" style="background: ${color}">
+            ${emp.empleado.nombre.charAt(0).toUpperCase()}
+          </div>
+          <div>
+            <div class="slots-barbero-nombre">${escapeHtml(emp.empleado.nombre)}</div>
+            <div class="slots-barbero-skills">${emp.empleado.skills ? emp.empleado.skills.join(', ') : profLabelCap}</div>
+          </div>
+        </div>
+        <div class="slots-horas">
+    `;
+    
+    if (libres.length === 0) {
+      html += '<p class="slots-sin-horas">Sin horarios disponibles este día</p>';
+    } else {
+      libres.forEach(slot => {
+        const isSelected = CalendarState.empleadoSeleccionado === emp.empleado.id && 
+                          CalendarState.slotSeleccionado === slot.horaInicio;
+        const selectedClass = isSelected ? 'slot-btn--selected' : '';
+        
+        html += `
+          <button class="slot-btn ${selectedClass}" 
+                  data-empleado-id="${emp.empleado.id}"
+                  data-empleado-nombre="${escapeHtml(emp.empleado.nombre)}"
+                  data-hora-inicio="${slot.horaInicio}"
+                  data-hora-fin="${slot.horaFin}">
+            ${slot.horaInicio}
+          </button>
+        `;
+      });
+    }
+    
+    html += '</div></div>';
+  });
+  
+  html += '</div>';
+  cont.innerHTML = html;
+  
+  // Bind de eventos a los botones de slot
+  cont.querySelectorAll('.slot-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      
+      const empleadoID = btn.dataset.empleadoId;
+      const empleadoNombre = btn.dataset.empleadoNombre;
+      const horaInicio = btn.dataset.horaInicio;
+      const horaFin = btn.dataset.horaFin;
+      
+      // Actualizar estado visual
+      document.querySelectorAll('.slot-btn').forEach(b => b.classList.remove('slot-btn--selected'));
+      btn.classList.add('slot-btn--selected');
+      
+      CalendarState.empleadoSeleccionado = empleadoID;
+      CalendarState.slotSeleccionado = horaInicio;
+      
+      // Disparar evento para app.js
+      document.dispatchEvent(new CustomEvent('slotSeleccionado', {
+        detail: { empleadoID, empleadoNombre, horaInicio, horaFin }
+      }));
+      
+      if (onSlotSelect) {
+        onSlotSelect({ empleadoID, empleadoNombre, horaInicio, horaFin });
+      }
+    });
+  });
+}
+
+// ════════════════════════════════════════════════════════════════
+// CARGA DE DISPONIBILIDAD DESDE SUPABASE
+// ════════════════════════════════════════════════════════════════
+
+async function cargarDisponibilidad(fecha, servicioID) {
+  if (!fecha || !servicioID) return null;
+  
+  // Mostrar loader en slots
+  const slotsContainer = document.getElementById('slots-container');
+  if (slotsContainer) {
+    slotsContainer.innerHTML = '<div class="slots-vacio">⏳ Cargando disponibilidad...</div>';
+  }
+  
+  try {
+    const result = await API.getDisponibilidad(fecha, servicioID);
+    
+    if (result.ok) {
+      CalendarState.disponibilidad = result;
+      CalendarState.servicioSeleccionado = servicioID;
+      
+      // Renderizar slots
+      renderSlots('slots-container', result, (slot) => {
+        // Actualizar resumen en sidebar
+        actualizarResumenSeleccion();
+      });
+      
+      return result;
+    } else {
+      console.error('Error al cargar disponibilidad:', result.error);
+      if (slotsContainer) {
+        slotsContainer.innerHTML = `<p class="slots-vacio">❌ ${result.error || 'Error al cargar disponibilidad'}</p>`;
+      }
+      return null;
+    }
+  } catch (error) {
+    console.error('Error en cargarDisponibilidad:', error);
+    if (slotsContainer) {
+      slotsContainer.innerHTML = '<p class="slots-vacio">❌ Error de conexión. Intenta nuevamente.</p>';
+    }
+    return null;
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+// ACTUALIZAR RESUMEN EN SIDEBAR
+// ════════════════════════════════════════════════════════════════
+
+function actualizarResumenSeleccion() {
+  const resumenDiv = document.getElementById('resumen-seleccion');
+  if (!resumenDiv) return;
+  
+  const servicio = CalendarState.disponibilidad?.servicio;
+  const fecha = CalendarState.fechaSeleccionada;
+  const empleadoNombre = CalendarState.empleadoSeleccionado ? 
+    document.querySelector(`.slot-btn--selected`)?.dataset.empleadoNombre : null;
+  const hora = CalendarState.slotSeleccionado;
+  
+  if (!servicio && !fecha && !empleadoNombre) {
+    resumenDiv.innerHTML = '<p class="resumen-placeholder">Selecciona un servicio y fecha para continuar.</p>';
+    return;
+  }
+  
+  let html = '<div style="display:flex;flex-direction:column;gap:12px">';
+  
+  if (servicio) {
+    html += `
+      <div style="display:flex;justify-content:space-between">
+        <span style="color:var(--muted)">Servicio:</span>
+        <strong>${escapeHtml(servicio.nombre)}</strong>
+      </div>
+      <div style="display:flex;justify-content:space-between">
+        <span style="color:var(--muted)">Precio:</span>
+        <strong style="color:var(--gold)">$${servicio.precio.toLocaleString('es-CL')}</strong>
+      </div>
+    `;
+  }
+  
+  if (fecha) {
+    const fechaObj = new Date(fecha + 'T12:00:00');
+    const fechaFormateada = fechaObj.toLocaleDateString('es-CL', { 
+      weekday: 'long', 
+      day: 'numeric', 
+      month: 'long' 
+    });
+    html += `
+      <div style="display:flex;justify-content:space-between">
+        <span style="color:var(--muted)">Fecha:</span>
+        <strong>${fechaFormateada}</strong>
+      </div>
+    `;
+  }
+  
+  if (empleadoNombre && hora) {
+    const profLabel = (window.TENANT && window.TENANT.profesionalLabelCap) || 'Profesional';
+    html += `
+      <div style="display:flex;justify-content:space-between">
+        <span style="color:var(--muted)">${profLabel}:</span>
+        <strong>${escapeHtml(empleadoNombre)}</strong>
+      </div>
+      <div style="display:flex;justify-content:space-between">
+        <span style="color:var(--muted)">Hora:</span>
+        <strong>${hora}</strong>
+      </div>
+    `;
+  }
+  
+  html += '</div>';
+  resumenDiv.innerHTML = html;
+}
+
+// ════════════════════════════════════════════════════════════════
+// HELPERS
+// ════════════════════════════════════════════════════════════════
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return str.replace(/[&<>]/g, function(m) {
+    if (m === '&') return '&amp;';
+    if (m === '<') return '&lt;';
+    if (m === '>') return '&gt;';
+    return m;
+  });
+}
+
+// ════════════════════════════════════════════════════════════════
+// FUNCIONES GLOBALES PARA COMPATIBILIDAD CON app.js EXISTENTE
+// ════════════════════════════════════════════════════════════════
+
+window.renderCalendario = function(containerId) {
+  Calendar.init(containerId, (fecha) => {
+    // Cuando se selecciona fecha, cargar disponibilidad
+    if (CalendarState.servicioSeleccionado) {
+      cargarDisponibilidad(fecha, CalendarState.servicioSeleccionado);
+    }
+  });
+};
+
+window.seleccionarFecha = function(fecha) {
+  Calendar.setFecha(fecha);
+  if (CalendarState.servicioSeleccionado) {
+    cargarDisponibilidad(fecha, CalendarState.servicioSeleccionado);
+  }
+};
+
+window.renderSlots = function(containerId, disponibilidad) {
+  renderSlots(containerId, disponibilidad, (slot) => {
+    actualizarResumenSeleccion();
+  });
+};
+
+window.slotClick = function(empleadoID, empleadoNombre, horaInicio, horaFin) {
+  CalendarState.empleadoSeleccionado = empleadoID;
+  CalendarState.slotSeleccionado = horaInicio;
+  actualizarResumenSeleccion();
+  
+  document.dispatchEvent(new CustomEvent('slotSeleccionado', {
+    detail: { empleadoID, empleadoNombre, horaInicio, horaFin }
+  }));
+};
+
+// Exportar para uso global
 window.Calendar = Calendar;
+window.CalendarState = CalendarState;
+window.cargarDisponibilidad = cargarDisponibilidad;
+window.actualizarResumenSeleccion = actualizarResumenSeleccion;
+
+console.log('✅ calendar.js v3 cargado');
