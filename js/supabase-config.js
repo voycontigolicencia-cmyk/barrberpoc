@@ -1,5 +1,5 @@
 /* ================================================================
-   PLATAFORMA AGENDA — supabase-client.js (v2)
+   PLATAFORMA AGENDA — supabase-config.js (v2)
    
    Cliente Supabase + capa API. Lee de window.TENANT.
    
@@ -612,67 +612,7 @@ const API = {
     }
   },
   
-  // ─────────────────────────────────────────────────────────────────
-  // DASHBOARD / REPORTES
-  // ─────────────────────────────────────────────────────────────────
-  async getDashboard() {
-    try {
-      const hoy = new Date().toISOString().split('T')[0];
-      
-      const [reservasHoyRes, proximasRes, clientesRes] = await Promise.all([
-        db.from('reservas').select('*').eq('fecha', hoy)
-          .neq('estado', window.TENANT.estados.CANCELADA)
-          .order('hora_inicio', { ascending: true }),
-        db.from('reservas').select('*').gte('fecha', hoy)
-          .neq('estado', window.TENANT.estados.CANCELADA)
-          .order('fecha', { ascending: true })
-          .order('hora_inicio', { ascending: true })
-          .limit(20),
-        db.from('clientes').select('*', { count: 'exact', head: true })
-      ]);
-      
-      const empleados = await this.getEmpleados();
-      const servicios = await this.getServicios();
-      
-      const stats = this._calcularStats(reservasHoyRes.data || []);
-      
-      return {
-        ok: true,
-        fecha: hoy,
-        stats,
-        reservasHoy: reservasHoyRes.data || [],
-        proximas: proximasRes.data || [],
-        empleados,
-        servicios,
-        totalClientes: clientesRes.count || 0
-      };
-    } catch (e) {
-      console.error('getDashboard:', e);
-      return { ok: false, error: e.message };
-    }
-  },
-  
-  _calcularStats(reservas) {
-    return {
-      totalHoy: reservas.length,
-      confirmadas: reservas.filter(r => r.estado === window.TENANT.estados.CONFIRMADA).length,
-      completadas: reservas.filter(r => r.estado === window.TENANT.estados.COMPLETADA).length,
-      canceladas:  reservas.filter(r => r.estado === window.TENANT.estados.CANCELADA).length,
-      noShow:      reservas.filter(r => r.estado === window.TENANT.estados.NO_SHOW).length,
-      ingresoEstimado: reservas
-        .filter(r => r.estado !== window.TENANT.estados.CANCELADA)
-        .reduce((s, r) => s + (r.monto_pagado || r.precio || 0), 0)
-    };
-  },
-  
-  async getReservasPorDia(fecha) {
-    const { data } = await db
-      .from('reservas').select('*').eq('fecha', fecha)
-      .order('hora_inicio', { ascending: true });
-    return data || [];
-  },
-  
-  // ─────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────
   // DISPATCH AL APPS SCRIPT (modo híbrido)
   // ─────────────────────────────────────────────────────────────────
   _dispatchAppsScript(accion, reserva, anterior = null) {
@@ -682,24 +622,33 @@ const API = {
       return Promise.resolve();
     }
     
-    const body = JSON.stringify({ accion, reserva, anterior });
+    // ✅ INCLUIR EL SECRET
+    const body = JSON.stringify({ 
+      accion, 
+      reserva, 
+      anterior,
+      secret: window.TENANT.webhookSecret || ''
+    });
     
-    // fire-and-forget con keepalive (sobrevive a la navegación)
+    console.log(`📤 Webhook enviado: ${accion}`, { 
+      reservaId: reserva?.id, 
+      secretEnviado: !!window.TENANT.webhookSecret 
+    });
+    
     return fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },  // text/plain evita CORS preflight
+      headers: { 'Content-Type': 'text/plain' },
       body,
       keepalive: true,
-      mode: 'no-cors'                              // no leemos respuesta
+      mode: 'no-cors'
     }).catch(e => {
       console.warn('AS dispatch falló:', e.message);
-      // retry en background una vez
       setTimeout(() => {
         fetch(url, { method: 'POST', body, mode: 'no-cors', keepalive: true }).catch(() => {});
       }, 2000);
     });
   }
-};
+};  
 
 window.API = API;
 console.log('✅ Supabase + API listos para tenant:', window.TENANT.id);
