@@ -63,9 +63,14 @@
   <link rel="stylesheet" href="styles.css">
 
   <!-- ══════════════════════════════════════════════════════════════
-       SUPABASE SDK
+       CONFIGURACIÓN DEL TENANT (PRIMERO)
        ═══════════════════════════════════════════════════════════════ -->
-  <script src="../tenant/tenant.config.js"></script>
+  <script src="tenant/tenant.config.js"></script>
+
+  <!-- ══════════════════════════════════════════════════════════════
+       SUPABASE SDK + CLIENTE (DEPENDE DE window.TENANT)
+       ═══════════════════════════════════════════════════════════════ -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="js/supabase-client.js"></script>
 </head>
 <body>
@@ -90,7 +95,7 @@
     <a class="nav-link" href="#reservar">Reservar</a>
     <a class="nav-link" href="#ubicacion">Ubicación</a>
     <a class="nav-link" href="#contacto">Contacto</a>
-    <a class="nav-link nav-link--admin" href="dashboard.html">Admin</a>
+    <a class="nav-link nav-link--admin" href="admin.html">Admin</a>
   </div>
 </nav>
 
@@ -167,7 +172,7 @@
       <div class="sidebar-card" id="contacto">
         <div class="sidebar-titulo">Información</div>
         <div style="font-size:13px;color:var(--muted);line-height:1.8" id="info-sidebar">
-          <!-- Inyectado por JS desde CONFIG -->
+          <!-- Inyectado por JS desde TENANT -->
         </div>
       </div>
     </div>
@@ -299,110 +304,107 @@
 </div>
 
 <!-- ══════════════════════════════════════════════════════════════
-     SCRIPTS
+     SCRIPTS DE APLICACIÓN
      ═══════════════════════════════════════════════════════════════ -->
 
 <!-- Leaflet JS -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 
-<!-- Supabase Config + API (IMPORTANTE: cargar primero) -->
-<script src="../tenant/tenant.config.js"></script>
-<script src="js/supabase-client.js"></script>
+<!-- Lógica de la app (calendar.js y app.js deben existir en la raíz o ajusta la ruta) -->
+<script src="js/calendar.js"></script>
+<script src="js/app.js"></script>
 
-<!-- Aplicación -->
-<script src="calendar.js"></script>
-<script src="app.js"></script>
-
+<!-- Script embebido para inyectar datos y mapa (usa window.TENANT) -->
 <script>
 /* ══════════════════════════════════════════════════════════════
-   Inyectar datos de contacto desde CONFIG
+   Inyectar datos de contacto desde window.TENANT
    ═══════════════════════════════════════════════════════════════ */
 document.addEventListener('DOMContentLoaded', function () {
-  // Verificar que CONFIG está disponible
-  if (typeof CONFIG === 'undefined') {
-    console.error('CONFIG no está definido. Verifica supabase-config.js');
-    return;
-  }
+  // Esperar a que TENANT esté disponible (por si carga asíncrona)
+  function cargarDatos() {
+    if (typeof window.TENANT === 'undefined') {
+      console.warn('⏳ Esperando window.TENANT...');
+      setTimeout(cargarDatos, 100);
+      return;
+    }
+    const cfg = window.TENANT;
 
-  /* Sidebar info */
-  var infoEl = document.getElementById('info-sidebar');
-  if (infoEl) {
-    infoEl.innerHTML =
-      '<p>📍 ' + CONFIG.direccion + '</p>' +
-      '<p>📞 <a href="tel:' + CONFIG.telefono + '" style="color:var(--gold)">' + CONFIG.telefono + '</a></p>' +
-      '<p>⏰ ' + CONFIG.horario + '</p>' +
-      '<p>📧 <a href="mailto:' + CONFIG.email + '" style="color:var(--gold)">' + CONFIG.email + '</a></p>' +
-      '<p>💬 <a href="' + CONFIG.whatsapp + '" target="_blank" rel="noopener" style="color:#25D366">WhatsApp</a>' +
-      ' &nbsp;|&nbsp; 📸 <a href="' + CONFIG.instagram + '" target="_blank" rel="noopener" style="color:#E1306C">Instagram</a></p>';
-  }
+    /* Sidebar info */
+    var infoEl = document.getElementById('info-sidebar');
+    if (infoEl) {
+      infoEl.innerHTML =
+        '<p>📍 ' + (cfg.direccion || '—') + '</p>' +
+        '<p>📞 <a href="tel:' + (cfg.telefono || '') + '" style="color:var(--gold)">' + (cfg.telefono || '—') + '</a></p>' +
+        '<p>⏰ ' + (cfg.horarioPublico || cfg.horario || 'Lun–Sáb 9:00–20:00') + '</p>' +
+        '<p>📧 <a href="mailto:' + (cfg.email || '') + '" style="color:var(--gold)">' + (cfg.email || '—') + '</a></p>' +
+        '<p>💬 <a href="' + (cfg.whatsapp || '#') + '" target="_blank" rel="noopener" style="color:#25D366">WhatsApp</a>' +
+        ' &nbsp;|&nbsp; 📸 <a href="' + (cfg.instagram || '#') + '" target="_blank" rel="noopener" style="color:#E1306C">Instagram</a></p>';
+    }
 
-  /* Footer */
-  var footerInfo = document.getElementById('footer-info');
-  var footerNombre = document.getElementById('footer-nombre');
-  if (footerInfo) {
-    footerInfo.innerHTML =
-      CONFIG.direccion + ' · ' + CONFIG.telefono + '<br>' +
-      CONFIG.horario + ' · ' + CONFIG.email;
-  }
-  if (footerNombre) footerNombre.textContent = CONFIG.nombre;
+    /* Footer */
+    var footerInfo = document.getElementById('footer-info');
+    var footerNombre = document.getElementById('footer-nombre');
+    if (footerInfo) {
+      footerInfo.innerHTML =
+        (cfg.direccion || '') + ' · ' + (cfg.telefono || '') + '<br>' +
+        (cfg.horarioPublico || cfg.horario || '') + ' · ' + (cfg.email || '');
+    }
+    if (footerNombre) footerNombre.textContent = cfg.nombre || 'Barbería Pro';
 
-  /* Sección ubicación */
-  var ubDir     = document.getElementById('ub-dir');
-  var ubHorario = document.getElementById('ub-horario');
-  var ubWsp     = document.getElementById('ub-wsp');
-  var ubIg      = document.getElementById('ub-ig');
-  if (ubDir)     ubDir.textContent     = CONFIG.direccion;
-  if (ubHorario) ubHorario.textContent = CONFIG.horario;
-  if (ubWsp)     ubWsp.href            = CONFIG.whatsapp;
-  if (ubIg)      ubIg.href             = CONFIG.instagram;
+    /* Sección ubicación */
+    var ubDir     = document.getElementById('ub-dir');
+    var ubHorario = document.getElementById('ub-horario');
+    var ubWsp     = document.getElementById('ub-wsp');
+    var ubIg      = document.getElementById('ub-ig');
+    if (ubDir)     ubDir.textContent     = cfg.direccion || '—';
+    if (ubHorario) ubHorario.textContent = cfg.horarioPublico || cfg.horario || 'Lun–Sáb 9:00–20:00';
+    if (ubWsp)     ubWsp.href            = cfg.whatsapp || '#';
+    if (ubIg)      ubIg.href             = cfg.instagram || '#';
 
-  /* Logo personalizado */
-  if (CONFIG.logoUrl) {
-    var navLogo = document.getElementById('nav-logo');
-    if (navLogo) {
-      navLogo.innerHTML = '<img src="' + CONFIG.logoUrl + '" alt="' + CONFIG.nombre + '" ' +
-        'style="height:38px;width:38px;border-radius:50%;object-fit:cover;border:2px solid var(--gold)">';
+    /* Logo personalizado */
+    if (cfg.logoUrl) {
+      var navLogo = document.getElementById('nav-logo');
+      if (navLogo) {
+        navLogo.innerHTML = '<img src="' + cfg.logoUrl + '" alt="' + (cfg.nombre || '') + '" ' +
+          'style="height:38px;width:38px;border-radius:50%;object-fit:cover;border:2px solid var(--gold)">';
+      }
+    }
+
+    /* ── Inicializar mapa Leaflet ── */
+    if (cfg.lat && cfg.lng) {
+      try {
+        var mapa = L.map('mapa-leaflet', { zoomControl: true }).setView([cfg.lat, cfg.lng], 16);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '© <a href="https://openstreetmap.org">OpenStreetMap</a>',
+          maxZoom: 19
+        }).addTo(mapa);
+
+        var iconoCustom = L.divIcon({
+          html: '<div style="background:#C9A84C;width:36px;height:36px;border-radius:50% 50% 50% 0;' +
+                'transform:rotate(-45deg);border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.4)">' +
+                '</div><span style="position:absolute;top:6px;left:8px;font-size:16px;transform:rotate(45deg)">✂️</span>',
+          className: '',
+          iconSize:   [36, 36],
+          iconAnchor: [18, 36],
+          popupAnchor:[0, -40]
+        });
+
+        L.marker([cfg.lat, cfg.lng], { icon: iconoCustom })
+          .addTo(mapa)
+          .bindPopup('<strong>' + (cfg.nombre || '') + '</strong><br>' + (cfg.direccion || '') + '<br>' +
+            '<a href="' + (cfg.whatsapp || '#') + '" target="_blank" style="color:#25D366">💬 WhatsApp</a>')
+          .openPopup();
+      } catch(e) {
+        console.warn('Mapa Leaflet no disponible:', e.message);
+        var mapaEl = document.getElementById('mapa-leaflet');
+        if (mapaEl) mapaEl.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:14px">📍 ' + (cfg.direccion || 'Dirección no disponible') + '</div>';
+      }
+    } else {
+      document.getElementById('mapa-leaflet').innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:14px">📍 ' + (cfg.direccion || 'Dirección no disponible') + '</div>';
     }
   }
 
-  /* ── Inicializar mapa Leaflet ── */
-  try {
-    var mapa = L.map('mapa-leaflet', { zoomControl: true }).setView(
-      [CONFIG.lat, CONFIG.lng], 16
-    );
-
-    /* Tiles OpenStreetMap */
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© <a href="https://openstreetmap.org">OpenStreetMap</a>',
-      maxZoom: 19
-    }).addTo(mapa);
-
-    /* Marcador personalizado con color dorado */
-    var iconoCustom = L.divIcon({
-      html: '<div style="background:#C9A84C;width:36px;height:36px;border-radius:50% 50% 50% 0;' +
-            'transform:rotate(-45deg);border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.4)">' +
-            '</div><span style="position:absolute;top:6px;left:8px;font-size:16px;transform:rotate(45deg)">✂️</span>',
-      className: '',
-      iconSize:   [36, 36],
-      iconAnchor: [18, 36],
-      popupAnchor:[0, -40]
-    });
-
-    L.marker([CONFIG.lat, CONFIG.lng], { icon: iconoCustom })
-      .addTo(mapa)
-      .bindPopup(
-        '<strong>' + CONFIG.nombre + '</strong><br>' +
-        CONFIG.direccion + '<br>' +
-        '<a href="' + CONFIG.whatsapp + '" target="_blank" style="color:#25D366">💬 WhatsApp</a>'
-      )
-      .openPopup();
-  } catch(e) {
-    console.warn('Mapa Leaflet no disponible:', e.message);
-    var mapaEl = document.getElementById('mapa-leaflet');
-    if (mapaEl) mapaEl.innerHTML =
-      '<div style="display:flex;align-items:center;justify-content:center;height:100%;' +
-      'color:var(--muted);font-size:14px">📍 ' + CONFIG.direccion + '</div>';
-  }
+  cargarDatos();
 });
 </script>
 </body>
