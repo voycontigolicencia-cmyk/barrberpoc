@@ -611,7 +611,68 @@ const API = {
       return [];
     }
   },
+  // ─────────────────────────────────────────────────────────────────
+  // RESERVAS POR DÍA (para admin)
+  // ─────────────────────────────────────────────────────────────────
+  async getReservasPorDia(fecha) {
+    try {
+      const { data, error } = await db
+        .from('reservas')
+        .select('*')
+        .eq('fecha', fecha)
+        .order('hora_inicio', { ascending: true });
+      if (error) throw error;
+      return data || [];
+    } catch (e) {
+      console.error('getReservasPorDia:', e);
+      return [];
+    }
+  },
   
+  // ─────────────────────────────────────────────────────────────────
+  // DASHBOARD (para monitor)
+  // ─────────────────────────────────────────────────────────────────
+  async getDashboard() {
+    try {
+      const hoy = new Date().toISOString().split('T')[0];
+      
+      const [reservasHoyRes, proximasRes] = await Promise.all([
+        db.from('reservas').select('*').eq('fecha', hoy)
+          .neq('estado', window.TENANT.estados.CANCELADA)
+          .order('hora_inicio', { ascending: true }),
+        db.from('reservas').select('*').gte('fecha', hoy)
+          .neq('estado', window.TENANT.estados.CANCELADA)
+          .order('fecha', { ascending: true })
+          .order('hora_inicio', { ascending: true })
+          .limit(20)
+      ]);
+      
+      const reservasHoy = reservasHoyRes.data || [];
+      const proximas = proximasRes.data || [];
+      
+      const stats = {
+        totalHoy: reservasHoy.length,
+        confirmadas: reservasHoy.filter(r => r.estado === 'Confirmada').length,
+        completadas: reservasHoy.filter(r => r.estado === 'Completada').length,
+        canceladas:  reservasHoy.filter(r => r.estado === 'Cancelada').length,
+        noShow:      reservasHoy.filter(r => r.estado === 'No se presentó').length,
+        ingresoEstimado: reservasHoy
+          .filter(r => r.estado !== 'Cancelada')
+          .reduce((s, r) => s + (r.monto_pagado || r.precio || 0), 0)
+      };
+      
+      return {
+        ok: true,
+        fecha: hoy,
+        stats,
+        reservasHoy,
+        proximas
+      };
+    } catch (e) {
+      console.error('getDashboard:', e);
+      return { ok: false, error: e.message };
+    }
+  },
     // ─────────────────────────────────────────────────────────────────
   // DISPATCH AL APPS SCRIPT (modo híbrido)
   // ─────────────────────────────────────────────────────────────────
